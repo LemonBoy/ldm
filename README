@@ -7,5 +7,5 @@ all the bells and whistles but still want to enjoy automount.
 It does mount every device in /media and names them by either
 (in order) volume label, volume uuid or device serial or using the
 fstab rule for that device, if defined.
-Everything in ~14Kb of C89 code with libudev as only dependency.
+Everything in ~14Kb of C code with libudev as only dependency.
 

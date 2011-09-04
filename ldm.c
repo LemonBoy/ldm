@@ -67,7 +67,7 @@ s_strdup(const char *str)
 int
 log_open ()
 {
-    g_logfd = fopen(LOG_PATH, "w");
+    g_logfd = fopen(LOG_PATH, "a");
     return (g_logfd != 0);
 }
 
@@ -75,6 +75,7 @@ void
 log_write (char *category, char *text)
 {
     fprintf(g_logfd, "[%i][%s] %s\n", time(NULL), category, text);
+    fflush(g_logfd);
 }
 
 int
@@ -90,7 +91,7 @@ log_close ()
 int
 lock_create (int pid)
 {
-    g_lockfd = fopen(LOCK_PATH, "w");
+    g_lockfd = fopen(LOCK_PATH, "w+");
     if (!g_lockfd)
         return 0;
     fprintf(g_lockfd, "%d", pid);
@@ -232,9 +233,9 @@ device_create_mountpoint (struct device_t *device)
 
     if (udev_device_get_property_value(device->udev, "ID_FS_LABEL") != NULL)
         strcat(tmp, udev_device_get_property_value(device->udev, "ID_FS_LABEL"));
-    if (udev_device_get_property_value(device->udev, "ID_FS_UUID") != NULL)
+    else if (udev_device_get_property_value(device->udev, "ID_FS_UUID") != NULL)
         strcat(tmp, udev_device_get_property_value(device->udev, "ID_FS_UUID"));
-    if (udev_device_get_property_value(device->udev, "ID_SERIAL") != NULL)
+    else if (udev_device_get_property_value(device->udev, "ID_SERIAL") != NULL)
         strcat(tmp, udev_device_get_property_value(device->udev, "ID_SERIAL"));
 
     /* It can't fail as every disc should have at least the serial */
@@ -378,10 +379,8 @@ device_mount (struct udev_device *dev)
 
     device = device_new(dev);
 
-    if (!device) {
-        log_write("ERR", "Cannot find the device...mount halted");
+    if (!device)
         return 0;
-    }
     
     /* If the device has no media or its already mounted return OK */
     if (!device->has_media || device->mounted)
@@ -593,6 +592,7 @@ cleanup:
     fstab_unload(g_fstab);
     free(g_fstab);
 
+    log_write("INFO", "Terminating...");
     lock_remove();
     log_close();
 
