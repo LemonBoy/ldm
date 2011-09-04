@@ -391,7 +391,7 @@ device_mount (struct udev_device *dev)
        
     sprintf(cmdline, MOUNT_CMD, 
             device->filesystem, 
-            (device->fstab_entry) ? device->fstab_entry->opts : "default", 
+            (device->fstab_entry) ? device->fstab_entry->opts : "defaults", 
             device->devnode, 
             device->mountpoint);
 
