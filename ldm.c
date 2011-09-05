@@ -142,8 +142,22 @@ struct fstab_node_t *
 fstab_search (struct fstab_t *fstab, struct device_t *device)
 {
     struct fstab_node_t *node;
+    const char *tmp;
+
     for (node = fstab->head; node; node = node->next) {
-        if (!strcmp(node->node, device->devnode))
+        if (!strncasecmp(node->node, "UUID=", 5)) {
+            tmp = udev_device_get_property_value(device->udev, "ID_FS_UUID_SAFE");
+            if (tmp && !strcmp(node->node + 5, tmp))
+                return node;
+        }
+
+        else if (!strncasecmp(node->node, "LABEL=", 6)) {
+            tmp = udev_device_get_property_value(device->udev, "ID_FS_LABEL_SAFE");
+            if (tmp && !strcmp(node->node + 6, tmp))
+                return node;
+        }
+
+        else if (!strcmp(node->node, device->devnode))
             return node;
     }
     return NULL;
@@ -231,10 +245,10 @@ device_create_mountpoint (struct device_t *device)
 
     strcpy(tmp, "/media/");
 
-    if (udev_device_get_property_value(device->udev, "ID_FS_LABEL") != NULL)
-        strcat(tmp, udev_device_get_property_value(device->udev, "ID_FS_LABEL"));
-    else if (udev_device_get_property_value(device->udev, "ID_FS_UUID") != NULL)
-        strcat(tmp, udev_device_get_property_value(device->udev, "ID_FS_UUID"));
+    if (udev_device_get_property_value(device->udev, "ID_FS_LABEL_SAFE") != NULL)
+        strcat(tmp, udev_device_get_property_value(device->udev, "ID_FS_LABEL_SAFE"));
+    else if (udev_device_get_property_value(device->udev, "ID_FS_UUID_SAFE") != NULL)
+        strcat(tmp, udev_device_get_property_value(device->udev, "ID_FS_UUID_SAFE"));
     else if (udev_device_get_property_value(device->udev, "ID_SERIAL") != NULL)
         strcat(tmp, udev_device_get_property_value(device->udev, "ID_SERIAL"));
 
@@ -389,7 +403,7 @@ device_mount (struct udev_device *dev)
     mkdir(device->mountpoint, 777);
        
     sprintf(cmdline, MOUNT_CMD, 
-            device->filesystem, 
+            (device->fstab_entry) ? device->fstab_entry->type : device->filesystem, 
             (device->fstab_entry) ? device->fstab_entry->opts : "defaults", 
             device->devnode, 
             device->mountpoint);
