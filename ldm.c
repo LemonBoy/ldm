@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
+#include <poll.h>
 #include <libudev.h>
 #include <mntent.h>
 
@@ -220,12 +221,6 @@ device_is_mounted (struct device_t *device)
 int 
 device_has_media (struct device_t *device) 
 {
-    /*struct udev_list_entry *k =  udev_device_get_properties_list_entry(device->udev);
-    struct udev_list_entry *y;
-    udev_list_entry_foreach(y, k) {
-        printf("%s %s\n", udev_list_entry_get_name(y), udev_list_entry_get_value(y));
-    }*/
-
     switch (device->type) {
         case DEVICE_FLOPPY:
         case DEVICE_VOLUME:
@@ -245,12 +240,17 @@ device_create_mountpoint (struct device_t *device)
 
     strcpy(tmp, "/media/");
 
-    if (udev_device_get_property_value(device->udev, "ID_FS_LABEL_SAFE") != NULL)
-        strcat(tmp, udev_device_get_property_value(device->udev, "ID_FS_LABEL_SAFE"));
-    else if (udev_device_get_property_value(device->udev, "ID_FS_UUID_SAFE") != NULL)
-        strcat(tmp, udev_device_get_property_value(device->udev, "ID_FS_UUID_SAFE"));
+    if (udev_device_get_property_value(device->udev, "ID_FS_LABEL_ENC") != NULL)
+        strcat(tmp, udev_device_get_property_value(device->udev, "ID_FS_LABEL_ENC"));
+    else if (udev_device_get_property_value(device->udev, "ID_FS_UUID_ENC") != NULL)
+        strcat(tmp, udev_device_get_property_value(device->udev, "ID_FS_UUID_ENC"));
     else if (udev_device_get_property_value(device->udev, "ID_SERIAL") != NULL)
         strcat(tmp, udev_device_get_property_value(device->udev, "ID_SERIAL"));
+
+    /* Strip the hypen and the subsequent stuff */
+    char *hypen = strrchr((const char *)tmp, '-');
+    if (hypen)
+        *hypen = 0;
 
     /* It can't fail as every disc should have at least the serial */
 
@@ -426,8 +426,11 @@ device_unmount (struct udev_device *dev)
 
     device = device_search((char *)udev_device_get_devnode(dev));
 
+    /* When using eject the remove command is issued 2 times, one when you 
+     * execute eject and one when you unplug the device. We already have
+     * destroyed the device the first time so the second time it wont find
+     * it. So no bitching in the log.                                      */
     if (!device) {
-        log_write("ERR", "Cannot find the device...unmount halted");
         return 0;
     }
 
@@ -517,6 +520,7 @@ main (int argc, char **argv)
     struct udev_monitor *monitor;
     struct udev_device  *device;
     const  char         *action;
+    struct pollfd        pollfd;
 
     printf("ldm "VERSION_STR"\n");
     printf("2011 (C) The Lemon Man\n");
@@ -576,11 +580,20 @@ main (int argc, char **argv)
         goto cleanup;
     }
 
+    pollfd.fd       = udev_monitor_get_fd(monitor);
+    pollfd.events   = POLLIN;
+
     log_write("INFO", "Entering the main loop");
 
     g_running = 1;
 
     while (g_running) {
+        if (poll(&pollfd, 1, -1) < 1)
+            continue;
+
+        if (!(pollfd.revents & POLLIN))
+            continue;
+
         device = udev_monitor_receive_device(monitor);
 
         if (!device)
@@ -588,12 +601,12 @@ main (int argc, char **argv)
 
         action = udev_device_get_action(device);    
               
-        if (!strcmp(action, "add") && !device_mount(device))
-            log_write("ERR", "Error while mounting the device");
-        else if (!strcmp(action, "remove") && !device_unmount(device))
-            log_write("ERR", "Error while unmounting the device");
-        else if (!strcmp(action, "change") && !device_change(device))
-            log_write("ERR", "Error while changing the device");
+        if (!strcmp(action, "add"))
+            device_mount(device);
+        else if (!strcmp(action, "remove"))
+            device_unmount(device);
+        else if (!strcmp(action, "change"))
+            device_change(device);
     }
 
 cleanup:
