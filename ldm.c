@@ -150,13 +150,13 @@ fstab_search (struct fstab_t *fstab, struct device_t *device)
 
     for (node = fstab->head; node; node = node->next) {
         if (!strncasecmp(node->node, "UUID=", 5)) {
-            tmp = udev_device_get_property_value(device->udev, "ID_FS_UUID_SAFE");
+            tmp = udev_device_get_property_value(device->udev, "ID_FS_UUID_ENC");
             if (tmp && !strcmp(node->node + 5, tmp))
                 return node;
         }
 
         else if (!strncasecmp(node->node, "LABEL=", 6)) {
-            tmp = udev_device_get_property_value(device->udev, "ID_FS_LABEL_SAFE");
+            tmp = udev_device_get_property_value(device->udev, "ID_FS_LABEL_ENC");
             if (tmp && !strcmp(node->node + 6, tmp))
                 return node;
         }
