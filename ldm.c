@@ -1,9 +1,11 @@
 #include <stdio.h>
 #include <malloc.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <string.h>
 #include <signal.h>
 #include <poll.h>
+#include <pwd.h>
 #include <libudev.h>
 #include <mntent.h>
 
@@ -39,7 +41,7 @@ typedef struct device_t  {
     struct fstab_node_t *fstab_entry;
 } device_t;
 
-#define MOUNT_CMD   "/bin/mount -t %s -o %s %s %s"
+#define MOUNT_CMD   "/bin/mount -t %s -o uid=%i,gid=%i,%s %s %s"
 #define UMOUNT_CMD  "/bin/umount %s"
 #define MAX_DEVICES 20
 
@@ -50,6 +52,7 @@ static struct device_t  * g_devices[MAX_DEVICES];
 static FILE             * g_logfd;
 static FILE             * g_lockfd;
 static int                g_running;
+static int                g_uid, g_gid;
 
 /* A less stupid s_strdup */
 
@@ -402,8 +405,9 @@ device_mount (struct udev_device *dev)
 
     mkdir(device->mountpoint, 777);
        
-    sprintf(cmdline, MOUNT_CMD, 
+    sprintf(cmdline, MOUNT_CMD,
             (device->fstab_entry) ? device->fstab_entry->type : device->filesystem, 
+            g_uid, g_gid,
             (device->fstab_entry) ? device->fstab_entry->opts : "defaults", 
             device->devnode, 
             device->mountpoint);
@@ -521,6 +525,7 @@ main (int argc, char **argv)
     struct udev_device  *device;
     const  char         *action;
     struct pollfd        pollfd;
+    struct passwd       *user_pwd;
 
     printf("ldm "VERSION_STR"\n");
     printf("2011 (C) The Lemon Man\n");
@@ -545,12 +550,17 @@ main (int argc, char **argv)
         return 0;
     }
 
+    user_pwd = getpwnam(getlogin());
+
+    g_gid = user_pwd->pw_gid;
+    g_uid = user_pwd->pw_uid;
+
     signal(SIGTERM, sig_handler);
     signal(SIGINT , sig_handler);
 
     log_write("INFO", "ldm "VERSION_STR);
     log_write("INFO", "Starting up...");
-
+    
     /* Allocate the head for the fstab LL */
     g_fstab = malloc(sizeof(struct fstab_t));
     g_fstab->head = NULL;
