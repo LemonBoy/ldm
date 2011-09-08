@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <signal.h>
+#include <syslog.h>
 #include <poll.h>
 #include <pwd.h>
 #include <libudev.h>
@@ -62,30 +63,6 @@ s_strdup(const char *str)
     if (!str)
         return NULL;
     return (char *)strdup(str);
-}
-
-/* Logging functions */
-
-#define LOG_PATH "/var/log/ldm.log"
-
-int
-log_open ()
-{
-    g_logfd = fopen(LOG_PATH, "a");
-    return (g_logfd != 0);
-}
-
-void 
-log_write (char *category, char *text)
-{
-    fprintf(g_logfd, "[%i][%s] %s\n", time(NULL), category, text);
-    fflush(g_logfd);
-}
-
-int
-log_close ()
-{
-    fclose(g_logfd);
 }
 
 /* Locking functions */
@@ -413,7 +390,7 @@ device_mount (struct udev_device *dev)
             device->mountpoint);
 
     if (system(cmdline) < 0) {
-        log_write("ERR", "Error while executing mount");
+        syslog(LOG_ERR, "Error while executing mount");
         return 0;
     }
 
@@ -445,13 +422,13 @@ device_unmount (struct udev_device *dev)
     sprintf(cmdline, UMOUNT_CMD, device->devnode);
 
     if (system(cmdline) < 0) {
-        log_write("ERR", "Cannot delete the mountpoint");
+        syslog(LOG_ERR, "Cannot delete the mountpoint");
         return 0;
     }
 
     sprintf(cmdline, "rm -rf %s", device->mountpoint);
     if (system(cmdline) < 0) {
-        log_write("ERR", "Error while executing umount");
+        syslog(LOG_ERR, "Error while executing umount");
         return 0;
     }
 
@@ -540,10 +517,7 @@ main (int argc, char **argv)
         return 1;
     }
 
-    if (!log_open()) {
-        printf("Cannot open the log for writing\nAre you running me as root ?\n");
-        return 0;
-    }    
+    openlog("ldm", LOG_CONS, LOG_DAEMON);
 
     if (!daemonize()) {
         printf("Could not spawn the daemon...\n");
@@ -558,8 +532,8 @@ main (int argc, char **argv)
     signal(SIGTERM, sig_handler);
     signal(SIGINT , sig_handler);
 
-    log_write("INFO", "ldm "VERSION_STR);
-    log_write("INFO", "Starting up...");
+    syslog(LOG_INFO, "ldm "VERSION_STR);
+    syslog(LOG_INFO, "Starting up...");
     
     /* Allocate the head for the fstab LL */
     g_fstab = malloc(sizeof(struct fstab_t));
@@ -570,15 +544,15 @@ main (int argc, char **argv)
     monitor = udev_monitor_new_from_netlink(udev, "udev");
 
     if (!monitor) {
-        log_write("ERR", "Cannot create a new monitor");
+        syslog(LOG_ERR, "Cannot create a new monitor");
         goto cleanup;
     }
     if (udev_monitor_enable_receiving(monitor)) {
-        log_write("ERR", "Cannot enable receiving");   
+        syslog(LOG_ERR, "Cannot enable receiving");   
         goto cleanup;
     }
     if (udev_monitor_filter_add_match_subsystem_devtype(monitor, "block", NULL)) {
-        log_write("ERR", "Cannot set the filter");
+        syslog(LOG_ERR, "Cannot set the filter");
         goto cleanup;
     }
 
@@ -586,14 +560,14 @@ main (int argc, char **argv)
     device_list_clear();
 
     if (!fstab_parse(g_fstab)) {
-        log_write("ERR", "Error while parsing "FSTAB_PATH);
+        syslog(LOG_ERR, "Error while parsing "FSTAB_PATH);
         goto cleanup;
     }
 
     pollfd.fd       = udev_monitor_get_fd(monitor);
     pollfd.events   = POLLIN;
 
-    log_write("INFO", "Entering the main loop");
+    syslog(LOG_INFO, "Entering the main loop");
 
     g_running = 1;
 
@@ -629,9 +603,8 @@ cleanup:
     fstab_unload(g_fstab);
     free(g_fstab);
 
-    log_write("INFO", "Terminating...");
+    syslog(LOG_INFO,  "Terminating...");
     lock_remove();
-    log_close();
 
     return 1;
 }
