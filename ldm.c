@@ -381,6 +381,13 @@ device_mount (struct udev_device *dev)
         return 1;
 
     mkdir(device->mountpoint, 777);
+
+    /* Get the logged user gid and uid. Makes much more sense asking for it
+     * here as if you launch ldm as daemon getlogin will return NULL. */
+    user_pwd = getpwnam(getlogin());
+
+    g_gid = user_pwd->pw_gid;
+    g_uid = user_pwd->pw_uid;
        
     sprintf(cmdline, MOUNT_CMD,
             (device->fstab_entry) ? device->fstab_entry->type : device->filesystem, 
@@ -528,11 +535,6 @@ main (int argc, char **argv)
         printf("Could not spawn the daemon...\n");
         return 0;
     }
-
-    user_pwd = getpwnam(getlogin());
-
-    g_gid = user_pwd->pw_gid;
-    g_uid = user_pwd->pw_uid;
 
     signal(SIGTERM, sig_handler);
     signal(SIGINT , sig_handler);
