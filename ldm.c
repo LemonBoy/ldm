@@ -42,9 +42,9 @@ typedef struct device_t  {
     struct fstab_node_t *fstab_entry;
 } device_t;
 
-#define MOUNT_CMD       "/bin/mount -t %s -o uid=%i,gid=%i,%s %s %s"
-#define UMOUNT_CMD      "/bin/umount %s"
-#define MAX_DEVICES     20
+#define MOUNT_CMD   "/bin/mount -t %s -o uid=%i,gid=%i,%s %s %s"
+#define UMOUNT_CMD  "/bin/umount %s"
+#define MAX_DEVICES 20
 
 /* Static global structs */
 
@@ -295,9 +295,7 @@ device_search (char *devnode)
     int j;
 
     for (j = 0; j < MAX_DEVICES; j++) {
-        if (g_devices[j] && 
-           (!strcmp(g_devices[j]->devnode, devnode) || 
-           (g_devices[j]->mountpoint && !strcmp(g_devices[j]->mountpoint, devnode))))
+        if (g_devices[j] && !strcmp(g_devices[j]->devnode, devnode))
             return g_devices[j];
     }
 
@@ -384,12 +382,9 @@ device_mount (struct udev_device *dev)
 
     mkdir(device->mountpoint, 777);
 
-    /* Get the logged user gid and uid. This allows the user to use the device */
-    user_pwd = getpwuid(geteuid());
-    if (!user_pwd) {
-        syslog(LOG_ERR, "Could not retrieve the user uid/gid");
-        return 0;
-    }
+    /* Get the logged user gid and uid. Makes much more sense asking for it
+     * here as if you launch ldm as daemon getlogin will return NULL. */
+    user_pwd = getpwnam(getlogin());
  
     sprintf(cmdline, MOUNT_CMD,
             (device->fstab_entry) ? device->fstab_entry->type : device->filesystem, 
@@ -442,7 +437,7 @@ device_unmount (struct udev_device *dev)
     }
 
     device_destroy(device);
-
+    
     return 1;
 }
 
@@ -572,33 +567,33 @@ main (int argc, char **argv)
         goto cleanup;
     }
 
-    pollfd.fd        = udev_monitor_get_fd(monitor);
-    pollfd.events    = POLLIN;
+    pollfd.fd       = udev_monitor_get_fd(monitor);
+    pollfd.events   = POLLIN;
 
     syslog(LOG_INFO, "Entering the main loop");
 
     g_running = 1;
 
     while (g_running) {
-        if (poll((struct pollfd *)&pollfd, 1, -1) < 1)
+        if (poll(&pollfd, 1, -1) < 1)
             continue;
 
-        /* An udev event arrived */
-        if (pollfd.revents & POLLIN) {
-            device = udev_monitor_receive_device(monitor);
+        if (!(pollfd.revents & POLLIN))
+            continue;
 
-            if (!device)
-                continue;
+        device = udev_monitor_receive_device(monitor);
 
-            action = udev_device_get_action(device);    
-                  
-            if (!strcmp(action, "add"))
-                device_mount(device);
-            else if (!strcmp(action, "remove"))
-                device_unmount(device);
-            else if (!strcmp(action, "change"))
-                device_change(device);
-        }
+        if (!device)
+            continue;
+
+        action = udev_device_get_action(device);    
+              
+        if (!strcmp(action, "add"))
+            device_mount(device);
+        else if (!strcmp(action, "remove"))
+            device_unmount(device);
+        else if (!strcmp(action, "change"))
+            device_change(device);
     }
 
 cleanup:
