@@ -9,8 +9,9 @@
 #include <pwd.h>
 #include <libudev.h>
 #include <mntent.h>
+#include "config.h"
 
-#define VERSION_STR "0.1"
+#define VERSION_STR "0.2"
 
 enum {
     DEVICE_VOLUME,
@@ -53,6 +54,7 @@ static struct device_t  * g_devices[MAX_DEVICES];
 static FILE             * g_logfd;
 static FILE             * g_lockfd;
 static int                g_running;
+static int                g_ipc;
 
 /* A less stupid s_strdup */
 
@@ -184,6 +186,8 @@ device_is_mounted (struct device_t *device)
     FILE *f;
     struct mntent *mntent;
 
+    if (!device)
+        return 0;
     f = setmntent(MTAB_PATH, "r");
     if (!f)
         return 0;
@@ -200,6 +204,8 @@ device_is_mounted (struct device_t *device)
 int 
 device_has_media (struct device_t *device) 
 {
+    if (!device)
+        return 0;
     switch (device->type) {
         case DEVICE_FLOPPY:
         case DEVICE_VOLUME:
@@ -219,10 +225,10 @@ device_create_mountpoint (struct device_t *device)
 
     strcpy(tmp, "/media/");
 
-    if (udev_device_get_property_value(device->udev, "ID_FS_LABEL_ENC") != NULL)
-        strcat(tmp, udev_device_get_property_value(device->udev, "ID_FS_LABEL_ENC"));
-    else if (udev_device_get_property_value(device->udev, "ID_FS_UUID_ENC") != NULL)
-        strcat(tmp, udev_device_get_property_value(device->udev, "ID_FS_UUID_ENC"));
+    if (udev_device_get_property_value(device->udev, "ID_FS_LABEL") != NULL)
+        strcat(tmp, udev_device_get_property_value(device->udev, "ID_FS_LABEL"));
+    else if (udev_device_get_property_value(device->udev, "ID_FS_UUID") != NULL)
+        strcat(tmp, udev_device_get_property_value(device->udev, "ID_FS_UUID"));
     else if (udev_device_get_property_value(device->udev, "ID_SERIAL") != NULL)
         strcat(tmp, udev_device_get_property_value(device->udev, "ID_SERIAL"));
 
@@ -230,6 +236,14 @@ device_create_mountpoint (struct device_t *device)
     char *hypen = strrchr((const char *)tmp, '-');
     if (hypen)
         *hypen = 0;
+    /* Replace the whitespaces */
+    char *c;
+    for (c = (char*)&tmp; *c; c++) {
+       if (*c == ' ')
+           *c = '_';
+    }
+
+    printf("Mount : %s\n", tmp);
 
     /* It can't fail as every disc should have at least the serial */
 
@@ -294,6 +308,9 @@ device_search (char *devnode)
 {
     int j;
 
+    if (!devnode)
+        return NULL;
+
     for (j = 0; j < MAX_DEVICES; j++) {
         if (g_devices[j] && !strcmp(g_devices[j]->devnode, devnode))
             return g_devices[j];
@@ -327,8 +344,7 @@ device_new (struct udev_device *dev)
         return NULL;
     }
 
-    if (!strcmp(dev_idtype, "disk") &&
-        (!strcmp(dev_type, "partition") || !strcmp(dev_type, "disk"))) {
+    if ((!strcmp(dev_type, "partition") || !strcmp(dev_type, "disk"))) {
         device->type = DEVICE_VOLUME;
     } else if (!strcmp(dev_idtype, "cd")) {
         device->type = DEVICE_CD;
@@ -382,18 +398,14 @@ device_mount (struct udev_device *dev)
 
     mkdir(device->mountpoint, 777);
 
-    /* Get the logged user gid and uid. Makes much more sense asking for it
-     * here as if you launch ldm as daemon getlogin will return NULL. */
-    user_pwd = getpwnam(getlogin());
- 
     sprintf(cmdline, MOUNT_CMD,
             (device->fstab_entry) ? device->fstab_entry->type : device->filesystem, 
-            user_pwd->pw_uid, user_pwd->pw_gid,
+            CONFIG_USER_UID, CONFIG_USER_GID, 
             (device->fstab_entry) ? device->fstab_entry->opts : "defaults", 
             device->devnode, 
             device->mountpoint);
 
-    if (system(cmdline) < 0) {
+    if (system(cmdline)) {
         syslog(LOG_ERR, "Error while executing mount");
         return 0;
     }
@@ -408,33 +420,28 @@ device_unmount (struct udev_device *dev)
 {
     struct device_t *device;
     char cmdline[256];
+    int tries = 10;
 
     device = device_search((char *)udev_device_get_devnode(dev));
 
     /* When using eject the remove command is issued 2 times, one when you 
      * execute eject and one when you unplug the device. We already have
      * destroyed the device the first time so the second time it wont find
-     * it. So no bitching in the log.                                      */
+     * it. So no bitching in the log.                                   */
     if (!device) {
         return 0;
     }
 
-    /* The device isn't mounted, return ok */
-    if (!device->mounted)
-        return 1;
-
-    sprintf(cmdline, UMOUNT_CMD, device->devnode);
-
-    if (system(cmdline) < 0) {
-        syslog(LOG_ERR, "Cannot delete the mountpoint");
-        return 0;
+    device->mounted = device_is_mounted(device);
+    if (device->mounted) {
+        sprintf(cmdline, UMOUNT_CMD, device->devnode);
+        do {
+            if (!system(cmdline))
+                break;
+        } while (tries--);
     }
 
-    sprintf(cmdline, "rm -rf %s", device->mountpoint);
-    if (system(cmdline) < 0) {
-        syslog(LOG_ERR, "Error while executing umount");
-        return 0;
-    }
+    rmdir(device->mountpoint);
 
     device_destroy(device);
     
@@ -449,8 +456,10 @@ device_change (struct udev_device *dev)
     device = device_search((char *)udev_device_get_devnode(dev));
 
     /* Unmount the old media... */
-    if (device && device->mounted && !device_unmount(dev)) 
-        return 0;
+    if (device) {
+        if (device_is_mounted(device) && !device_unmount(dev)) 
+            return 0;
+    }
     /* ...and mount the new one if present */    
     if (!device_new(dev))
         return 0;
@@ -513,7 +522,7 @@ main (int argc, char **argv)
     struct pollfd        pollfd;
 
     printf("ldm "VERSION_STR"\n");
-    printf("2011 (C) The Lemon Man\n");
+    printf("2011-2012 (C) The Lemon Man\n");
 
     if (getuid() != 0) {
         printf("You have to run this program as root!\n");
@@ -557,7 +566,7 @@ main (int argc, char **argv)
     if (udev_monitor_filter_add_match_subsystem_devtype(monitor, "block", NULL)) {
         syslog(LOG_ERR, "Cannot set the filter");
         goto cleanup;
-    }
+    }    
 
     /* Clear the devices array */
     device_list_clear();
@@ -587,7 +596,7 @@ main (int argc, char **argv)
             continue;
 
         action = udev_device_get_action(device);    
-              
+
         if (!strcmp(action, "add"))
             device_mount(device);
         else if (!strcmp(action, "remove"))
