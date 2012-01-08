@@ -43,7 +43,8 @@ typedef struct device_t  {
     struct fstab_node_t *fstab_entry;
 } device_t;
 
-#define MOUNT_CMD   "/bin/mount -t %s -o uid=%i,gid=%i,%s %s %s"
+#define MOUNT_CMD   "/bin/mount -t %s -o %s,%s %s %s"
+#define ID_FMT      "uid=%i,gid=%i"
 #define UMOUNT_CMD  "/bin/umount %s"
 #define MAX_DEVICES 20
 
@@ -54,7 +55,6 @@ static struct device_t  * g_devices[MAX_DEVICES];
 static FILE             * g_logfd;
 static FILE             * g_lockfd;
 static int                g_running;
-static int                g_ipc;
 
 /* A less stupid s_strdup */
 
@@ -217,6 +217,21 @@ device_has_media (struct device_t *device)
     }
 }
 
+int
+filesystem_needs_id_fix (char *fs)
+{
+    int i;
+    static const char *fs_table [] = {
+        "msdos", "umsdos", "vfat", "exfat", "ntfs",
+    };
+
+    for (i = 0; i < sizeof(fs_table)/sizeof(char*); i++) {
+        if (!strcmp(fs_table[i], fs))
+            return 1;
+    }
+    return 0;    
+}
+
 char *
 device_create_mountpoint (struct device_t *device)
 {
@@ -242,8 +257,6 @@ device_create_mountpoint (struct device_t *device)
        if (*c == ' ')
            *c = '_';
     }
-
-    printf("Mount : %s\n", tmp);
 
     /* It can't fail as every disc should have at least the serial */
 
@@ -385,7 +398,9 @@ device_mount (struct udev_device *dev)
 {
     struct device_t *device;
     char cmdline[256];
+    char id_fmt[256];
     struct passwd   *user_pwd;
+    int needs_mount_id;
  
     device = device_new(dev);
 
@@ -398,16 +413,37 @@ device_mount (struct udev_device *dev)
 
     mkdir(device->mountpoint, 777);
 
+    /* Microsoft filesystems require the gid and uid to be passed
+     * as mount arguments to allow the user to read and write, 
+     * while posix filesystems just need a chown after being
+     * mounted 
+     */
+    needs_mount_id = filesystem_needs_id_fix(device->filesystem);
+
+    id_fmt[0] = 0;
+
+    if (needs_mount_id) 
+        sprintf(id_fmt, ID_FMT, CONFIG_USER_UID, CONFIG_USER_GID);
+
     sprintf(cmdline, MOUNT_CMD,
             (device->fstab_entry) ? device->fstab_entry->type : device->filesystem, 
-            CONFIG_USER_UID, CONFIG_USER_GID, 
+            id_fmt, 
             (device->fstab_entry) ? device->fstab_entry->opts : "defaults", 
             device->devnode, 
             device->mountpoint);
 
     if (system(cmdline)) {
         syslog(LOG_ERR, "Error while executing mount");
+        device_unmount(dev);
         return 0;
+    }
+
+    if (!needs_mount_id) {
+        if (chown(device->mountpoint, CONFIG_USER_UID, CONFIG_USER_GID)) {
+            syslog(LOG_ERR, "Cannot chown the mountpoint");
+            device_unmount(dev);
+            return 0;
+        }
     }
 
     device->mounted = device_is_mounted(device);
@@ -438,6 +474,7 @@ device_unmount (struct udev_device *dev)
         do {
             if (!system(cmdline))
                 break;
+            sleep(2);
         } while (tries--);
     }
 
