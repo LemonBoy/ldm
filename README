@@ -9,3 +9,6 @@ It does mount every device in /media and names them by either
 fstab rule for that device, if defined.
 Everything in ~14Kb of C code with libudev as only dependency.
 
+Read config.h if it the mounted volumes arent writable.
+RTFM, always.
+
