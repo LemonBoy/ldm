@@ -43,8 +43,8 @@ typedef struct device_t  {
     struct fstab_node_t *fstab_entry;
 } device_t;
 
-#define MOUNT_CMD   "/bin/mount -t %s -o %s,%s %s %s"
-#define ID_FMT      "uid=%i,gid=%i"
+#define MOUNT_CMD   "/bin/mount -t %s -o %s%s %s %s"
+#define ID_FMT      "uid=%i,gid=%i,"
 #define UMOUNT_CMD  "/bin/umount %s"
 #define MAX_DEVICES 20
 
@@ -181,18 +181,16 @@ fstab_parse (struct fstab_t *fstab)
 
 
 int
-device_is_mounted (struct device_t *device) 
+device_is_mounted (char *node) 
 {
     FILE *f;
     struct mntent *mntent;
 
-    if (!device)
-        return 0;
     f = setmntent(MTAB_PATH, "r");
     if (!f)
         return 0;
     while ((mntent = getmntent(f))) {
-        if (!strcmp(mntent->mnt_fsname, device->devnode)) {
+        if (!strcmp(mntent->mnt_fsname, node)) {
             endmntent(f);
             return 1;
         }
@@ -383,7 +381,7 @@ device_new (struct udev_device *dev)
         }
     }
 
-    device->mounted = device_is_mounted(device);
+    device->mounted = device_is_mounted(device->devnode);
 
     if (!device_register(device)) {
         device_destroy(device);
@@ -432,6 +430,8 @@ device_mount (struct udev_device *dev)
             device->devnode, 
             device->mountpoint);
 
+    printf("%s\n", cmdline);
+
     if (system(cmdline)) {
         syslog(LOG_ERR, "Error while executing mount");
         device_unmount(dev);
@@ -446,7 +446,7 @@ device_mount (struct udev_device *dev)
         }
     }
 
-    device->mounted = device_is_mounted(device);
+    device->mounted = device_is_mounted(device->devnode);
 
     return device->mounted;
 }
@@ -468,7 +468,7 @@ device_unmount (struct udev_device *dev)
         return 0;
     }
 
-    device->mounted = device_is_mounted(device);
+    device->mounted = device_is_mounted(device->devnode);
     if (device->mounted) {
         sprintf(cmdline, UMOUNT_CMD, device->devnode);
         do {
@@ -494,7 +494,7 @@ device_change (struct udev_device *dev)
 
     /* Unmount the old media... */
     if (device) {
-        if (device_is_mounted(device) && !device_unmount(dev)) 
+        if (device_is_mounted(device->devnode) && !device_unmount(dev)) 
             return 0;
     }
     /* ...and mount the new one if present */    
@@ -504,6 +504,32 @@ device_change (struct udev_device *dev)
         return 0;
 
     return 1;
+}
+
+void
+mount_plugged_devices (struct udev *udev)
+{    
+    const char *path;
+    const char *dev_node;
+    struct udev_enumerate *udev_enum;
+    struct udev_list_entry *devices;
+    struct udev_list_entry *entry;
+    struct udev_device *dev;
+
+    udev_enum = udev_enumerate_new(udev);
+    udev_enumerate_add_match_subsystem(udev_enum, "block");
+    udev_enumerate_scan_devices(udev_enum);
+    devices = udev_enumerate_get_list_entry(udev_enum);
+
+    udev_list_entry_foreach(entry, devices) {
+        path = udev_list_entry_get_name(entry);
+        dev = udev_device_new_from_syspath(udev, path);
+        dev_node = udev_device_get_devnode(dev);
+
+        if (!device_is_mounted((char *)dev_node))
+            device_mount(dev);
+    }
+    udev_enumerate_unref(udev_enum);
 }
 
 void
@@ -612,6 +638,8 @@ main (int argc, char **argv)
         syslog(LOG_ERR, "Error while parsing "FSTAB_PATH);
         goto cleanup;
     }
+
+    mount_plugged_devices(udev);
 
     pollfd.fd       = udev_monitor_get_fd(monitor);
     pollfd.events   = POLLIN;

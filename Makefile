@@ -1,6 +1,12 @@
 all:
-	@echo "#define CONFIG_USER_UID " $(shell id -u $(w -h | awk '{print$1}')) > config.h
-	@echo "#define CONFIG_USER_GID " $(shell id -g $(w -h | awk '{print$1}')) >> config.h
+	@echo "#define CONFIG_USER_UID " \
+		$(shell cat /etc/passwd | \
+		grep `who | awk '{print$$1}'` | \
+		awk -F':' '{print$$3}') > config.h
+	@echo "#define CONFIG_USER_GID " \
+		$(shell cat /etc/passwd | \
+		grep `who | awk '{print$$1}'` | \
+		awk -F':' '{print$$4}') >> config.h
 	gcc ldm.c -g -ludev -o ldm
 install: all
 	@cp -f ldm /usr/bin/ldm
