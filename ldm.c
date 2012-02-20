@@ -52,7 +52,6 @@ typedef struct device_t  {
 
 static struct fstab_t   * g_fstab;
 static struct device_t  * g_devices[MAX_DEVICES];
-static FILE             * g_logfd;
 static FILE             * g_lockfd;
 static int                g_running;
 
@@ -429,8 +428,6 @@ device_mount (struct udev_device *dev)
             (device->fstab_entry) ? device->fstab_entry->opts : "defaults", 
             device->devnode, 
             device->mountpoint);
-
-    printf("%s\n", cmdline);
 
     if (system(cmdline)) {
         syslog(LOG_ERR, "Error while executing mount");
