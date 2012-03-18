@@ -219,7 +219,7 @@ filesystem_needs_id_fix (char *fs)
 {
     int i;
     static const char *fs_table [] = {
-        "msdos", "umsdos", "vfat", "exfat", "ntfs",
+        "msdos", "umsdos", "vfat", "exfat", "ntfs", "iso9660", "udf",
     };
 
     for (i = 0; i < sizeof(fs_table)/sizeof(char*); i++) {
@@ -410,11 +410,10 @@ device_mount (struct udev_device *dev)
 
     mkdir(device->mountpoint, 777);
 
-    /* Microsoft filesystems require the gid and uid to be passed
-     * as mount arguments to allow the user to read and write, 
-     * while posix filesystems just need a chown after being
-     * mounted 
-     */
+    /* Microsoft filesystems and filesystems used on optical 
+     * discs require the gid and uid to be passed as mount 
+     * arguments to allow the user to read and write, while 
+     * posix filesystems just need a chown after being mounted */
     needs_mount_id = filesystem_needs_id_fix(device->filesystem);
 
     id_fmt[0] = 0;
