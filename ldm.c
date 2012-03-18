@@ -16,7 +16,6 @@
 enum {
     DEVICE_VOLUME,
     DEVICE_CD,
-    DEVICE_FLOPPY,
     DEVICE_UNK
 };
 
@@ -204,7 +203,6 @@ device_has_media (struct device_t *device)
     if (!device)
         return 0;
     switch (device->type) {
-        case DEVICE_FLOPPY:
         case DEVICE_VOLUME:
             return (udev_device_get_property_value(device->udev, "ID_FS_USAGE") != NULL);
         break;
@@ -354,12 +352,12 @@ device_new (struct udev_device *dev)
         return NULL;
     }
 
-    if ((!strcmp(dev_type, "partition") || !strcmp(dev_type, "disk"))) {
+    if (!strcmp(dev_type,   "partition")|| 
+        !strcmp(dev_type,   "disk")     || 
+        !strcmp(dev_idtype, "floppy"))  {
         device->type = DEVICE_VOLUME;
     } else if (!strcmp(dev_idtype, "cd")) {
         device->type = DEVICE_CD;
-    } else if (!strcmp(dev_idtype, "floppy")) {
-        device->type = DEVICE_FLOPPY;
     }
 
     if (device->type == DEVICE_UNK) {
