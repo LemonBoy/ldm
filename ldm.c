@@ -66,7 +66,7 @@ s_strdup(const char *str)
 
 /* Locking functions */
 
-#define LOCK_PATH "/var/lock/ldm.lock"
+#define LOCK_PATH "/run/ldm.pid"
 
 int
 lock_create (int pid)
