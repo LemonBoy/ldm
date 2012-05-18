@@ -242,10 +242,6 @@ device_create_mountpoint (struct device_t *device)
     else if (udev_device_get_property_value(device->udev, "ID_SERIAL") != NULL)
         strcat(tmp, udev_device_get_property_value(device->udev, "ID_SERIAL"));
 
-    /* Strip the hypen and the subsequent stuff */
-    char *hypen = strrchr((const char *)tmp, '-');
-    if (hypen)
-        *hypen = 0;
     /* Replace the whitespaces */
     char *c;
     for (c = (char*)&tmp; *c; c++) {
