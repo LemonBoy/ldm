@@ -205,10 +205,10 @@ device_has_media (struct device_t *device)
     switch (device->type) {
         case DEVICE_VOLUME:
             return (udev_device_get_property_value(device->udev, "ID_FS_USAGE") != NULL);
-        break;
         case DEVICE_CD:
             return (udev_device_get_property_value(device->udev, "ID_CDROM_MEDIA") != NULL);
-        break;
+	default:
+	    return -1;
     }
 }
 
