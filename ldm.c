@@ -233,7 +233,7 @@ device_has_media (struct device_t *device)
         case DEVICE_CD:
             return (udev_device_get_property_value(device->udev, "ID_CDROM_MEDIA") != NULL);
 	default:
-	    return -1;
+	    return 0;
     }
 }
 
