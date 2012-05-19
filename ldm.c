@@ -232,6 +232,7 @@ device_create_mountpoint (struct device_t *device)
 {
     char tmp[256];
     char *name;
+    char *c;
 
     strcpy(tmp, "/media/");
 
@@ -243,7 +244,6 @@ device_create_mountpoint (struct device_t *device)
         strcat(tmp, udev_device_get_property_value(device->udev, "ID_SERIAL"));
 
     /* Replace the whitespaces */
-    char *c;
     for (c = (char*)&tmp; *c; c++) {
        if (*c == ' ')
            *c = '_';
