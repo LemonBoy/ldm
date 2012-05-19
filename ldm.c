@@ -54,6 +54,31 @@ static struct device_t  * g_devices[MAX_DEVICES];
 static FILE             * g_lockfd;
 static int                g_running;
 
+/* Functions declaration */
+char * s_strdup(const char *str);
+int lock_create(int pid);
+int lock_remove(void);
+int lock_exist(void);
+void fstab_unload(struct fstab_t *fstab);
+struct fstab_node_t * fstab_search(struct fstab_t *fstab,
+		struct device_t *device);
+int fstab_parse(struct fstab_t *fstab);
+int device_is_mounted(char *node);
+int device_has_media(struct device_t *device);
+int filesystem_needs_id_fix(char *fs);
+char * device_create_mountpoint(struct device_t *device);
+void device_list_clear(void);
+int device_register(struct device_t *dev);
+void device_destroy(struct device_t *dev);
+struct device_t * device_search(char *devnode);
+struct device_t * device_new(struct udev_device *dev);
+int device_mount(struct udev_device *dev);
+int device_unmount(struct udev_device *dev);
+int device_change(struct udev_device *dev);
+void mount_plugged_devices(struct udev *udev);
+void sig_handler(int signal);
+int daemonize(void);
+
 /* A less stupid s_strdup */
 
 char *
@@ -80,13 +105,13 @@ lock_create (int pid)
 }
 
 int
-lock_remove ()
+lock_remove (void)
 {
     return (remove(LOCK_PATH) == 0);
 }
 
 int
-lock_exist ()
+lock_exist (void)
 {
     FILE *f = fopen(LOCK_PATH, "r");
     if (f)
@@ -205,10 +230,10 @@ device_has_media (struct device_t *device)
     switch (device->type) {
         case DEVICE_VOLUME:
             return (udev_device_get_property_value(device->udev, "ID_FS_USAGE") != NULL);
-        break;
         case DEVICE_CD:
             return (udev_device_get_property_value(device->udev, "ID_CDROM_MEDIA") != NULL);
-        break;
+	default:
+	    return 0;
     }
 }
 
@@ -231,7 +256,7 @@ char *
 device_create_mountpoint (struct device_t *device)
 {
     char tmp[256];
-    char *name;
+    char *c;
 
     strcpy(tmp, "/media/");
 
@@ -243,7 +268,6 @@ device_create_mountpoint (struct device_t *device)
         strcat(tmp, udev_device_get_property_value(device->udev, "ID_SERIAL"));
 
     /* Replace the whitespaces */
-    char *c;
     for (c = (char*)&tmp; *c; c++) {
        if (*c == ' ')
            *c = '_';
@@ -255,7 +279,7 @@ device_create_mountpoint (struct device_t *device)
 }
 
 void 
-device_list_clear ()
+device_list_clear (void)
 {
     int j;
 
@@ -390,7 +414,6 @@ device_mount (struct udev_device *dev)
     struct device_t *device;
     char cmdline[256];
     char id_fmt[256];
-    struct passwd   *user_pwd;
     int needs_mount_id;
  
     device = device_new(dev);
@@ -530,7 +553,7 @@ sig_handler (int signal)
 }
 
 int
-daemonize ()
+daemonize (void)
 {
     pid_t child_pid;
 
@@ -566,7 +589,7 @@ daemonize ()
 }
 
 int
-main (int argc, char **argv)
+main (void)
 {
     struct udev         *udev;
     struct udev_monitor *monitor;
