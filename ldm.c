@@ -80,13 +80,13 @@ lock_create (int pid)
 }
 
 int
-lock_remove ()
+lock_remove (void)
 {
     return (remove(LOCK_PATH) == 0);
 }
 
 int
-lock_exist ()
+lock_exist (void)
 {
     FILE *f = fopen(LOCK_PATH, "r");
     if (f)
