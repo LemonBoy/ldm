@@ -231,7 +231,6 @@ char *
 device_create_mountpoint (struct device_t *device)
 {
     char tmp[256];
-    char *name;
     char *c;
 
     strcpy(tmp, "/media/");
@@ -255,7 +254,7 @@ device_create_mountpoint (struct device_t *device)
 }
 
 void 
-device_list_clear ()
+device_list_clear (void)
 {
     int j;
 
@@ -390,7 +389,6 @@ device_mount (struct udev_device *dev)
     struct device_t *device;
     char cmdline[256];
     char id_fmt[256];
-    struct passwd   *user_pwd;
     int needs_mount_id;
  
     device = device_new(dev);
@@ -530,7 +528,7 @@ sig_handler (int signal)
 }
 
 int
-daemonize ()
+daemonize (void)
 {
     pid_t child_pid;
 
@@ -566,7 +564,7 @@ daemonize ()
 }
 
 int
-main (int argc, char **argv)
+main (void)
 {
     struct udev         *udev;
     struct udev_monitor *monitor;
