@@ -8,7 +8,7 @@ EXEC = ldm
 SRCS = ldm.c
 OBJS = ${SRCS:.c=.o}
 
-PREFIX?=/usr/local
+PREFIX?=/usr
 BINDIR=${PREFIX}/bin
 DAEMONDIR=/etc/rc.d
 
@@ -25,6 +25,7 @@ debug: CC += ${CFDEBUG}
 
 clean:
 	rm -rf ./*.o
+	rm -rf ./ldm
 
 mrproper: clean
 	rm ${EXEC}
