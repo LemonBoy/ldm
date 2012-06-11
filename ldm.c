@@ -5,6 +5,7 @@
 #include <string.h>
 #include <signal.h>
 #include <syslog.h>
+#include <err.h>
 #include <poll.h>
 #include <pwd.h>
 #include <libudev.h>
@@ -85,9 +86,14 @@ int daemonize(void);
 char *
 s_strdup(const char *str)
 {
+    char *p;
+
     if (!str)
         return NULL;
-    return (char *)strdup(str);
+    p = strdup(str);
+    if (!p)
+        err(1, "strdup");
+    return p;
 }
 
 /* Locking functions */
@@ -182,6 +188,8 @@ fstab_parse (struct fstab_t *fstab)
         return 0;
     while ((mntent = getmntent(f))) {        
         node = malloc(sizeof(struct fstab_node_t));
+        if (!node)
+            err(1, "malloc");
 
         node->next = NULL;
         node->node = s_strdup(mntent->mnt_fsname);
@@ -357,6 +365,8 @@ device_new (struct udev_device *dev)
     const char *dev_idtype;
    
     device = malloc(sizeof(struct device_t));
+    if (!device)
+        err(1, "malloc");
 
     device->udev = dev;
 
@@ -653,6 +663,9 @@ main (int argc, char *argv[])
     
     /* Allocate the head for the fstab LL */
     g_fstab = malloc(sizeof(struct fstab_t));
+    if (!g_fstab)
+        err(1, "malloc");
+
     g_fstab->head = NULL;
 
     /* Create the udev struct/monitor */
