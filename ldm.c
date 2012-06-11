@@ -589,13 +589,14 @@ daemonize (void)
 }
 
 int
-main (void)
+main (int argc, char *argv[])
 {
     struct udev         *udev;
     struct udev_monitor *monitor;
     struct udev_device  *device;
     const  char         *action;
     struct pollfd        pollfd;
+    int                   daemon = 0;
 
     printf("ldm "VERSION_STR"\n");
     printf("2011-2012 (C) The Lemon Man\n");
@@ -610,9 +611,21 @@ main (void)
         return 1;
     }
 
+    int opt;
+    while ((opt = getopt(argc, argv, "d")) != -1) {
+        switch (opt) {
+        case 'd':
+            daemon = 1;
+            break;
+        default:
+            fprintf(stderr, "unrecognized option\n");
+            return 1;
+        }
+    }
+
     openlog("ldm", LOG_CONS, LOG_DAEMON);
 
-    if (!daemonize()) {
+    if (daemon && !daemonize()) {
         printf("Could not spawn the daemon...\n");
         return 0;
     }
