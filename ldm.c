@@ -9,7 +9,6 @@
 #include <pwd.h>
 #include <libudev.h>
 #include <mntent.h>
-#include "config.h"
 
 #define VERSION_STR "0.2"
 
@@ -53,6 +52,8 @@ static struct fstab_t   * g_fstab;
 static struct device_t  * g_devices[MAX_DEVICES];
 static FILE             * g_lockfd;
 static int                g_running;
+static int                g_uid;
+static int                g_gid;
 
 /* Functions declaration */
 char * s_strdup(const char *str);
@@ -425,7 +426,7 @@ device_mount (struct udev_device *dev)
     if (!device->has_media || device->mounted)
         return 1;
 
-    mkdir(device->mountpoint, 777);
+    mkdir(device->mountpoint, 755);
 
     /* Microsoft filesystems and filesystems used on optical 
      * discs require the gid and uid to be passed as mount 
@@ -436,7 +437,7 @@ device_mount (struct udev_device *dev)
     id_fmt[0] = 0;
 
     if (needs_mount_id) 
-        sprintf(id_fmt, ID_FMT, CONFIG_USER_UID, CONFIG_USER_GID);
+        sprintf(id_fmt, ID_FMT, g_uid, g_gid);
 
     sprintf(cmdline, MOUNT_CMD,
             (device->fstab_entry) ? device->fstab_entry->type : device->filesystem, 
@@ -452,7 +453,7 @@ device_mount (struct udev_device *dev)
     }
 
     if (!needs_mount_id) {
-        if (chown(device->mountpoint, CONFIG_USER_UID, CONFIG_USER_GID)) {
+        if (chown(device->mountpoint, g_uid, g_gid)) {
             syslog(LOG_ERR, "Cannot chown the mountpoint");
             device_unmount(dev);
             return 0;
@@ -573,7 +574,7 @@ daemonize (void)
         return 0;
     }
 
-    umask(0);
+    umask(022);
 
     if (setsid() < 0) {
         printf("setsid() failed\n");
@@ -596,38 +597,52 @@ main (int argc, char *argv[])
     struct udev_device  *device;
     const  char         *action;
     struct pollfd        pollfd;
-    int                   daemon = 0;
+    int                  daemon;
 
     printf("ldm "VERSION_STR"\n");
     printf("2011-2012 (C) The Lemon Man\n");
 
     if (getuid() != 0) {
         printf("You have to run this program as root!\n");
-        return 0;
+        return 1;
     }
 
     if (lock_exist()) {
         printf("ldm is already running!\n");
-        return 1;
+        return 0;
     }
 
+    daemon = 0;
+    g_uid = -1;
+    g_gid = -1;
+
     int opt;
-    while ((opt = getopt(argc, argv, "d")) != -1) {
+    while ((opt = getopt(argc, argv, "dg:u:")) != -1) {
         switch (opt) {
-        case 'd':
-            daemon = 1;
-            break;
-        default:
-            fprintf(stderr, "unrecognized option\n");
-            return 1;
+            case 'd':
+                daemon = 1;
+                break;
+            case 'g':
+                g_gid = strtol(optarg, NULL, 10);
+                break;
+            case 'u':
+                g_uid = strtol(optarg, NULL, 10);
+                break;
+            default:
+                return 1;
         }
+    }
+
+    if (g_uid < 0 || g_gid < 0) {
+        printf("You must supply your gid/uid!\n");
+        return 1;
     }
 
     openlog("ldm", LOG_CONS, LOG_DAEMON);
 
     if (daemon && !daemonize()) {
         printf("Could not spawn the daemon...\n");
-        return 0;
+        return 1;
     }
 
     signal(SIGTERM, sig_handler);
@@ -709,5 +724,5 @@ cleanup:
     syslog(LOG_INFO,  "Terminating...");
     lock_remove();
 
-    return 1;
+    return 0;
 }
