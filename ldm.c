@@ -86,9 +86,14 @@ int daemonize(void);
 char *
 s_strdup(const char *str)
 {
+    char *p;
+
     if (!str)
         return NULL;
-    return (char *)strdup(str);
+    p = strdup(str);
+    if (!p)
+        err(1, "strdup");
+    return p;
 }
 
 /* Locking functions */
