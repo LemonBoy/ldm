@@ -1,17 +1,19 @@
 #include <stdio.h>
+#include <fcntl.h>
 #include <malloc.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
 #include <signal.h>
 #include <syslog.h>
-#include <err.h>
 #include <poll.h>
 #include <pwd.h>
 #include <libudev.h>
 #include <mntent.h>
+#include <sys/inotify.h>
+#include <libmount/libmount.h>
 
-#define VERSION_STR "0.2"
+#define VERSION_STR "0.3"
 
 enum {
     DEVICE_VOLUME,
@@ -19,53 +21,35 @@ enum {
     DEVICE_UNK
 };
 
-typedef struct fstab_node_t {
-    struct fstab_node_t *next;
-    char                *node;
-    char                *path;
-    char                *type;
-    char                *opts;
-} fstab_node_t;
-
-typedef struct fstab_t {
-    struct fstab_node_t *head;
-} fstab_t;
-
 typedef struct device_t  {
     int                  type;
     char                *filesystem;
     char                *devnode;
     char                *mountpoint;
     int                  has_media;
-    int                  mounted;
     struct udev_device  *udev;
-    struct fstab_node_t *fstab_entry;
 } device_t;
 
-#define MOUNT_CMD   "/bin/mount -t %s -o %s%s %s %s"
+#define MOUNT_PATH  "/media/"
 #define ID_FMT      "uid=%i,gid=%i,"
-#define UMOUNT_CMD  "/bin/umount %s"
 #define MAX_DEVICES 20
 
 /* Static global structs */
 
-static struct fstab_t   * g_fstab;
-static struct device_t  * g_devices[MAX_DEVICES];
-static FILE             * g_lockfd;
-static int                g_running;
-static int                g_uid;
-static int                g_gid;
+static struct libmnt_table *g_fstab;
+static struct libmnt_table *g_mtab;
+static struct device_t     *g_devices[MAX_DEVICES];
+static FILE                *g_lockfd;
+static int                  g_running;
+static int                  g_uid;
+static int                  g_gid;
 
 /* Functions declaration */
 char * s_strdup(const char *str);
 int lock_create(int pid);
 int lock_remove(void);
 int lock_exist(void);
-void fstab_unload(struct fstab_t *fstab);
-struct fstab_node_t * fstab_search(struct fstab_t *fstab,
-		struct device_t *device);
-int fstab_parse(struct fstab_t *fstab);
-int device_is_mounted(char *node);
+struct libmnt_fs * fstab_search (struct libmnt_table *tab, struct device_t *device);
 int device_has_media(struct device_t *device);
 int filesystem_needs_id_fix(char *fs);
 char * device_create_mountpoint(struct device_t *device);
@@ -77,6 +61,7 @@ struct device_t * device_new(struct udev_device *dev);
 int device_mount(struct udev_device *dev);
 int device_unmount(struct udev_device *dev);
 int device_change(struct udev_device *dev);
+int force_reload_table (struct libmnt_table **table, const char *path);
 void mount_plugged_devices(struct udev *udev);
 void sig_handler(int signal);
 int daemonize(void);
@@ -86,14 +71,9 @@ int daemonize(void);
 char *
 s_strdup(const char *str)
 {
-    char *p;
-
     if (!str)
         return NULL;
-    p = strdup(str);
-    if (!p)
-        err(1, "strdup");
-    return p;
+    return (char *)strdup(str);
 }
 
 /* Locking functions */
@@ -126,109 +106,30 @@ lock_exist (void)
     return (f != NULL);
 }
 
-/* fstab handling functions */
+/* Convenience function for fstab handling */
 
 #define FSTAB_PATH  "/etc/fstab"
-#define MTAB_PATH   "/etc/mtab"
+#define MTAB_PATH   "/proc/self/mounts"
 
-void 
-fstab_unload (struct fstab_t *fstab)
+struct libmnt_fs *
+fstab_search (struct libmnt_table *tab, struct device_t *device)
 {
-    struct fstab_node_t *this;
-    struct fstab_node_t *next;
-
-    this = fstab->head;
-
-    while (this) {
-        next = this->next;
-        free(this->node);
-        free(this->path);
-        free(this->type);
-        free(this->opts);
-        free(this);
-        this = next;
-    }
-}
-
-struct fstab_node_t *
-fstab_search (struct fstab_t *fstab, struct device_t *device)
-{
-    struct fstab_node_t *node;
+    struct libmnt_fs *ret;
     const char *tmp;
 
-    for (node = fstab->head; node; node = node->next) {
-        if (!strncasecmp(node->node, "UUID=", 5)) {
-            tmp = udev_device_get_property_value(device->udev, "ID_FS_UUID_ENC");
-            if (tmp && !strcmp(node->node + 5, tmp))
-                return node;
-        }
+    /* Try matching the /dev node */
+    ret = mnt_table_find_source(tab, device->devnode, MNT_ITER_FORWARD);
+    if (ret) return ret;
+    /* Try matching the uuid */
+    tmp = udev_device_get_property_value(device->udev, "ID_FS_UUID");
+    ret = mnt_table_find_tag(tab, "UUID", tmp? tmp: "", MNT_ITER_FORWARD);
+    if (tmp && ret) return ret;
+    /* Try matching the label */
+    tmp = udev_device_get_property_value(device->udev, "ID_FS_LABEL");
+    ret = mnt_table_find_tag(tab, "LABEL", tmp? tmp: "", MNT_ITER_FORWARD);
+    if (tmp && ret) return ret;
 
-        else if (!strncasecmp(node->node, "LABEL=", 6)) {
-            tmp = udev_device_get_property_value(device->udev, "ID_FS_LABEL_ENC");
-            if (tmp && !strcmp(node->node + 6, tmp))
-                return node;
-        }
-
-        else if (!strcmp(node->node, device->devnode))
-            return node;
-    }
     return NULL;
-}
-
-int
-fstab_parse (struct fstab_t *fstab)
-{
-    FILE *f;
-    struct mntent *mntent;
-    struct fstab_node_t *node;
-    struct fstab_node_t *last;
-
-    f = setmntent(FSTAB_PATH, "r");
-    if (!f)
-        return 0;
-    while ((mntent = getmntent(f))) {        
-        node = malloc(sizeof(struct fstab_node_t));
-        if (!node)
-            err(1, "malloc");
-
-        node->next = NULL;
-        node->node = s_strdup(mntent->mnt_fsname);
-        node->path = s_strdup(mntent->mnt_dir);
-        node->type = s_strdup(mntent->mnt_type);
-        node->opts = s_strdup(mntent->mnt_opts);
-
-        if (!fstab->head) {
-            fstab->head = node;
-        } else {
-            last = fstab->head;
-            while (last->next) {
-                last = last->next;
-            }
-            last->next = node;
-        }
-    }
-    endmntent(f); 
-    return 1;
-}
-
-
-int
-device_is_mounted (char *node) 
-{
-    FILE *f;
-    struct mntent *mntent;
-
-    f = setmntent(MTAB_PATH, "r");
-    if (!f)
-        return 0;
-    while ((mntent = getmntent(f))) {
-        if (!strcmp(mntent->mnt_fsname, node)) {
-            endmntent(f);
-            return 1;
-        }
-    }
-    endmntent(f);
-    return 0;
 }
 
 int 
@@ -267,7 +168,7 @@ device_create_mountpoint (struct device_t *device)
     char tmp[256];
     char *c;
 
-    strcpy(tmp, "/media/");
+    strcpy(tmp, MOUNT_PATH);
 
     if (udev_device_get_property_value(device->udev, "ID_FS_LABEL") != NULL)
         strcat(tmp, udev_device_get_property_value(device->udev, "ID_FS_LABEL"));
@@ -324,20 +225,20 @@ device_destroy (struct device_t *dev)
             break;
     }
 
-    if (j == MAX_DEVICES)
-        return;
+    if (dev->devnode)
+        free(dev->devnode);
+    if (dev->filesystem)
+        free(dev->filesystem);
+    if (dev->mountpoint)
+        free(dev->mountpoint);
+    udev_device_unref(dev->udev);
 
-    if (g_devices[j]->devnode)
-        free(g_devices[j]->devnode);
-    if (g_devices[j]->filesystem)
-        free(g_devices[j]->filesystem);
-    if (g_devices[j]->mountpoint)
-        free(g_devices[j]->mountpoint);
-    udev_device_unref(g_devices[j]->udev);
+    free(dev);
 
-    free(g_devices[j]);
-
-    g_devices[j] = NULL;
+    /* Might happen that we have to destroy a device not yet
+     * registered. Just free it */
+    if (j < MAX_DEVICES)
+        g_devices[j] = NULL;
 }
 
 struct device_t *
@@ -356,17 +257,25 @@ device_search (char *devnode)
     return NULL;
 }
 
+int
+device_is_mounted (char *node)
+{
+    return (mnt_table_find_source(g_mtab, node, MNT_ITER_FORWARD) != NULL);
+}
+
 struct device_t *
 device_new (struct udev_device *dev)
 {
     struct device_t *device;
+    struct libmnt_fs *fstab_entry;
 
     const char *dev_type;
     const char *dev_idtype;
    
-    device = malloc(sizeof(struct device_t));
+    device = calloc(1, sizeof(struct device_t));
+
     if (!device)
-        err(1, "malloc");
+        return NULL;
 
     device->udev = dev;
 
@@ -397,19 +306,15 @@ device_new (struct udev_device *dev)
     }
 
     device->has_media = device_has_media(device);
-    device->fstab_entry = fstab_search(g_fstab, device);
-
-    device->mountpoint = NULL;
+    fstab_entry = fstab_search(g_fstab, device);
 
     if (device->has_media) {
-        if (device->fstab_entry) {
-            device->mountpoint = s_strdup(device->fstab_entry->path);
+        if (fstab_entry) {
+            device->mountpoint = s_strdup(mnt_fs_get_target(fstab_entry));
         } else {
             device->mountpoint = device_create_mountpoint(device);
         }
     }
-
-    device->mounted = device_is_mounted(device->devnode);
 
     if (!device_register(device)) {
         device_destroy(device);
@@ -423,7 +328,7 @@ int
 device_mount (struct udev_device *dev)
 {
     struct device_t *device;
-    char cmdline[256];
+    struct libmnt_context *ctx;
     char id_fmt[256];
     int needs_mount_id;
  
@@ -432,8 +337,8 @@ device_mount (struct udev_device *dev)
     if (!device)
         return 0;
     
-    /* If the device has no media or its already mounted return OK */
-    if (!device->has_media || device->mounted)
+    /* If the device has no media return OK */
+    if (!device->has_media)
         return 1;
 
     mkdir(device->mountpoint, 755);
@@ -449,38 +354,38 @@ device_mount (struct udev_device *dev)
     if (needs_mount_id) 
         sprintf(id_fmt, ID_FMT, g_uid, g_gid);
 
-    sprintf(cmdline, MOUNT_CMD,
-            (device->fstab_entry) ? device->fstab_entry->type : device->filesystem, 
-            id_fmt, 
-            (device->fstab_entry) ? device->fstab_entry->opts : "defaults", 
-            device->devnode, 
-            device->mountpoint);
+    ctx = mnt_new_context();
 
-    if (system(cmdline)) {
-        syslog(LOG_ERR, "Error while executing mount");
+    mnt_context_set_fstype(ctx, device->filesystem);
+    mnt_context_set_source(ctx, device->devnode);
+    mnt_context_set_target(ctx, device->mountpoint);
+    mnt_context_set_options(ctx, id_fmt);
+
+    if (mnt_context_mount(ctx)) {
+        syslog(LOG_ERR, "Error while mounting %s", device->devnode);
+        mnt_free_context(ctx);
         device_unmount(dev);
         return 0;
     }
 
+    mnt_free_context(ctx);
+
     if (!needs_mount_id) {
         if (chown(device->mountpoint, g_uid, g_gid)) {
-            syslog(LOG_ERR, "Cannot chown the mountpoint");
+            syslog(LOG_ERR, "Cannot chown %s", device->mountpoint);
             device_unmount(dev);
             return 0;
         }
     }
 
-    device->mounted = device_is_mounted(device->devnode);
-
-    return device->mounted;
+    return 1;
 }
 
 int
 device_unmount (struct udev_device *dev)
 {
     struct device_t *device;
-    char cmdline[256];
-    int tries = 10;
+    struct libmnt_context *ctx;
 
     device = device_search((char *)udev_device_get_devnode(dev));
 
@@ -492,15 +397,19 @@ device_unmount (struct udev_device *dev)
         return 0;
     }
 
-    device->mounted = device_is_mounted(device->devnode);
-    if (device->mounted) {
-        sprintf(cmdline, UMOUNT_CMD, device->devnode);
-        do {
-            if (!system(cmdline))
-                break;
-            sleep(2);
-        } while (tries--);
+    ctx = mnt_new_context();
+
+    mnt_context_set_target(ctx, device->devnode);
+
+    if (device_is_mounted(device->devnode)) {
+        if (mnt_context_umount(ctx)) {
+            syslog(LOG_ERR, "Error while unmounting %s", device->devnode);
+            mnt_free_context(ctx);
+            return 0;
+        }
     }
+    
+    mnt_free_context(ctx);
 
     rmdir(device->mountpoint);
 
@@ -599,6 +508,20 @@ daemonize (void)
     return 1;
 }
 
+int 
+force_reload_table (struct libmnt_table **table, const char *path)
+{
+    if (table && *table)
+        mnt_free_table(*table);
+
+    *table = mnt_new_table_from_file(path);
+
+    if (!*table)
+        syslog(LOG_ERR, "Error while parsing "FSTAB_PATH);
+
+    return (*table != NULL);
+}
+
 int
 main (int argc, char *argv[])
 {
@@ -606,8 +529,12 @@ main (int argc, char *argv[])
     struct udev_monitor *monitor;
     struct udev_device  *device;
     const  char         *action;
-    struct pollfd        pollfd;
+    struct pollfd        pollfd[3];  /* udev / inotify watch / mtab */
+    int                  opt;
     int                  daemon;
+    int                  notifyfd;
+    int                  fswatch;
+    struct inotify_event event;
 
     printf("ldm "VERSION_STR"\n");
     printf("2011-2012 (C) The Lemon Man\n");
@@ -622,21 +549,28 @@ main (int argc, char *argv[])
         return 0;
     }
 
-    daemon = 0;
-    g_uid = -1;
-    g_gid = -1;
+    notifyfd = inotify_init();
 
-    int opt;
+    if (notifyfd < 0) {
+        printf("Could not initialize inotify\n");
+        return 0;
+    }
+
+    daemon  =  0;
+    g_uid   = -1;
+    g_gid   = -1;
+    fswatch = -1;
+
     while ((opt = getopt(argc, argv, "dg:u:")) != -1) {
         switch (opt) {
             case 'd':
                 daemon = 1;
                 break;
             case 'g':
-                g_gid = strtol(optarg, NULL, 10);
+                g_gid = strtoul(optarg, NULL, 10);
                 break;
             case 'u':
-                g_uid = strtol(optarg, NULL, 10);
+                g_uid = strtoul(optarg, NULL, 10);
                 break;
             default:
                 return 1;
@@ -660,14 +594,8 @@ main (int argc, char *argv[])
 
     syslog(LOG_INFO, "ldm "VERSION_STR);
     syslog(LOG_INFO, "Starting up...");
-    
-    /* Allocate the head for the fstab LL */
-    g_fstab = malloc(sizeof(struct fstab_t));
-    if (!g_fstab)
-        err(1, "malloc");
 
-    g_fstab->head = NULL;
-
+ 
     /* Create the udev struct/monitor */
     udev = udev_new();
     monitor = udev_monitor_new_from_netlink(udev, "udev");
@@ -688,51 +616,81 @@ main (int argc, char *argv[])
     /* Clear the devices array */
     device_list_clear();
 
-    if (!fstab_parse(g_fstab)) {
-        syslog(LOG_ERR, "Error while parsing "FSTAB_PATH);
+    g_fstab = NULL;
+    g_mtab  = NULL;
+
+    /* The loop isn't active at this time so just do it by hand */
+    if (!force_reload_table(&g_fstab, FSTAB_PATH) || !force_reload_table(&g_mtab, MTAB_PATH))
         goto cleanup;
-    }
 
     mount_plugged_devices(udev);
 
-    pollfd.fd       = udev_monitor_get_fd(monitor);
-    pollfd.events   = POLLIN;
+    if (!force_reload_table(&g_fstab, FSTAB_PATH) || !force_reload_table(&g_mtab, MTAB_PATH))
+        goto cleanup;
+    
+    fswatch = inotify_add_watch(notifyfd, FSTAB_PATH, IN_CLOSE_WRITE);
+
+    /* Register all the events */
+    pollfd[0].fd = udev_monitor_get_fd(monitor);
+    pollfd[0].events = POLLIN;
+    pollfd[1].fd = notifyfd;
+    pollfd[1].events = POLLIN;
+    pollfd[2].fd = open(MTAB_PATH, O_RDONLY);
+    pollfd[2].events = POLLERR;
 
     syslog(LOG_INFO, "Entering the main loop");
 
     g_running = 1;
 
     while (g_running) {
-        if (poll(&pollfd, 1, -1) < 1)
+        if (poll((struct pollfd *)&pollfd, 3, -1) < 1)
             continue;
 
-        if (!(pollfd.revents & POLLIN))
-            continue;
+        /* Incoming message on udev socket */
+        if (pollfd[0].revents & POLLIN) {
+            device = udev_monitor_receive_device(monitor);
 
-        device = udev_monitor_receive_device(monitor);
+            if (!device)
+                continue;
 
-        if (!device)
-            continue;
+            action = udev_device_get_action(device);    
 
-        action = udev_device_get_action(device);    
+            if (!strcmp(action, "add"))
+                device_mount(device);
+            else if (!strcmp(action, "remove"))
+                device_unmount(device);
+            else if (!strcmp(action, "change"))
+                device_change(device);
+        }
+        /* Incoming message on inotify socket */
+        if (pollfd[1].revents & POLLIN) {
+            read(pollfd[1].fd, &event, sizeof(struct inotify_event)); 
 
-        if (!strcmp(action, "add"))
-            device_mount(device);
-        else if (!strcmp(action, "remove"))
-            device_unmount(device);
-        else if (!strcmp(action, "change"))
-            device_change(device);
+            if (!force_reload_table(&g_fstab, FSTAB_PATH))
+                goto cleanup;
+        }
+        /* mtab change */
+        if (pollfd[2].revents & POLLERR) {
+            if (!force_reload_table(&g_mtab, MTAB_PATH))
+                goto cleanup;
+        }
     }
 
 cleanup:
     /* Do the cleanup */
+    if (fswatch > 0)
+        inotify_rm_watch(notifyfd, fswatch);
+
+    close(notifyfd);
+    close(pollfd[2].fd);
+
     udev_monitor_unref(monitor);
     udev_unref(udev);
 
     device_list_clear();
 
-    fstab_unload(g_fstab);
-    free(g_fstab);
+    mnt_free_table(g_fstab);
+    mnt_free_table(g_mtab);
 
     syslog(LOG_INFO,  "Terminating...");
     lock_remove();

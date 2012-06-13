@@ -1,6 +1,6 @@
 CC	?= gcc
 CFLAGS ?= -O2
-LDFLAGS += -ludev
+LDFLAGS += -ludev -lmount
 CFDEBUG = -g3 -pedantic -Wall -Wunused-parameter -Wlong-long\
 		  -Wsign-conversion -Wconversion -Wimplicit-function-declaration
 
