@@ -440,6 +440,19 @@ device_change (struct udev_device *dev)
 }
 
 void
+check_registered_devices (void)
+{
+    int j;
+
+    /* Drop all the devices in the table that aren't mounted anymore */
+    for (j = 0; j < MAX_DEVICES; j++) {
+        if (g_devices[j] && !device_is_mounted(g_devices[j]->devnode))
+            device_unmount(g_devices[j]->udev);
+    }
+
+}
+
+void
 mount_plugged_devices (struct udev *udev)
 {    
     const char *path;
@@ -673,6 +686,7 @@ main (int argc, char *argv[])
         if (pollfd[2].revents & POLLERR) {
             if (!force_reload_table(&g_mtab, MTAB_PATH))
                 goto cleanup;
+            check_registered_devices();
         }
     }
 
