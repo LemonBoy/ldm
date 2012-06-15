@@ -31,7 +31,7 @@ typedef struct device_t  {
 } device_t;
 
 #define MOUNT_PATH  "/media/"
-#define ID_FMT      "uid=%i,gid=%i,"
+#define ID_FMT      "uid=%i,gid=%i"
 #define MAX_DEVICES 20
 
 /* Static global structs */
