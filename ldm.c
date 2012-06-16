@@ -132,6 +132,18 @@ fstab_search (struct libmnt_table *tab, struct device_t *device)
     return NULL;
 }
 
+int
+fstab_has_option (struct libmnt_table *tab, struct device_t *device, const char *option)
+{
+    struct libmnt_fs *ret;
+
+    ret = fstab_search(tab, device);
+    if (!ret)
+        return 0;
+
+    return mnt_fs_match_options(ret, option);
+}
+
 int 
 device_has_media (struct device_t *device) 
 {
@@ -337,8 +349,8 @@ device_mount (struct udev_device *dev)
     if (!device)
         return 0;
     
-    /* If the device has no media return OK */
-    if (!device->has_media)
+    /* If the device has no media or has the noauto option set in the fstab return ok */
+    if (!device->has_media || fstab_has_option(g_fstab, device, "+noauto"))
         return 1;
 
     mkdir(device->mountpoint, 755);
