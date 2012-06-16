@@ -45,4 +45,4 @@ install-systemd: ldm.service
 
 install: all install-main install-daemon install-systemd
 
-.PHONY: all debug clean mrproper install install-main install-daemon
+.PHONY: all debug clean mrproper install install-main install-daemon install-systemd
