@@ -3,6 +3,7 @@
 #include <malloc.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <limits.h>
 #include <string.h>
 #include <signal.h>
 #include <syslog.h>
@@ -177,17 +178,20 @@ filesystem_needs_id_fix (char *fs)
 char *
 device_create_mountpoint (struct device_t *device)
 {
-    char tmp[256];
+    char tmp[PATH_MAX];
     char *c;
+    const char *label, *uuid, *serial;
 
-    strcpy(tmp, MOUNT_PATH);
+    label = udev_device_get_property_value(device->udev, "ID_FS_LABEL");
+    uuid = udev_device_get_property_value(device->udev, "ID_FS_UUID");
+    serial = udev_device_get_property_value(device->udev, "ID_SERIAL");
 
-    if (udev_device_get_property_value(device->udev, "ID_FS_LABEL") != NULL)
-        strcat(tmp, udev_device_get_property_value(device->udev, "ID_FS_LABEL"));
-    else if (udev_device_get_property_value(device->udev, "ID_FS_UUID") != NULL)
-        strcat(tmp, udev_device_get_property_value(device->udev, "ID_FS_UUID"));
-    else if (udev_device_get_property_value(device->udev, "ID_SERIAL") != NULL)
-        strcat(tmp, udev_device_get_property_value(device->udev, "ID_SERIAL"));
+    if (label)
+        snprintf(tmp, sizeof(tmp), "%s%s", MOUNT_PATH, label);
+    else if (uuid)
+        snprintf(tmp, sizeof(tmp), "%s%s", MOUNT_PATH, uuid);
+    else if (serial)
+        snprintf(tmp, sizeof(tmp), "%s%s", MOUNT_PATH, serial);
 
     /* Replace the whitespaces */
     for (c = tmp; *c; c++) {
