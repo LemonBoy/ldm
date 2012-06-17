@@ -1,0 +1,10 @@
+[Unit]
+Description=lightweight device mounter
+
+[Service]
+Type=forking
+EnvironmentFile=/etc/conf.d/ldm
+ExecStart=/usr/bin/ldm -d -u $USER_UID -g $USER_GID
+
+[Install]
+WantedBy=multi-user.target
