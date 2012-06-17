@@ -190,7 +190,7 @@ device_create_mountpoint (struct device_t *device)
         strcat(tmp, udev_device_get_property_value(device->udev, "ID_SERIAL"));
 
     /* Replace the whitespaces */
-    for (c = (char*)&tmp; *c; c++) {
+    for (c = tmp; *c; c++) {
        if (*c == ' ')
            *c = '_';
     }
