@@ -365,7 +365,7 @@ device_mount (struct udev_device *dev)
     id_fmt[0] = 0;
 
     if (needs_mount_id) 
-        sprintf(id_fmt, ID_FMT, g_uid, g_gid);
+        snprintf(id_fmt, sizeof(id_fmt), ID_FMT, g_uid, g_gid);
 
     ctx = mnt_new_context();
 
