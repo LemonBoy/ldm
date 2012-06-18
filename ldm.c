@@ -515,14 +515,14 @@ daemonize (void)
     }
 
     if (chdir("/") < 0) {
-        printf("chdir() failed\n");
+        fprintf(stderr, "chdir() failed\n");
         return 0;
     }
 
     umask(022);
 
     if (setsid() < 0) {
-        printf("setsid() failed\n");
+        fprintf(stderr, "setsid() failed\n");
         return 0;
     }
 
