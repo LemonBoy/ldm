@@ -241,12 +241,9 @@ device_destroy (struct device_t *dev)
             break;
     }
 
-    if (dev->devnode)
-        free(dev->devnode);
-    if (dev->filesystem)
-        free(dev->filesystem);
-    if (dev->mountpoint)
-        free(dev->mountpoint);
+    free(dev->devnode);
+    free(dev->filesystem);
+    free(dev->mountpoint);
     udev_device_unref(dev->udev);
 
     free(dev);
