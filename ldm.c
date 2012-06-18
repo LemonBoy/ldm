@@ -669,7 +669,7 @@ main (int argc, char *argv[])
     g_running = 1;
 
     while (g_running) {
-        if (poll((struct pollfd *)&pollfd, 3, -1) < 1)
+        if (poll(pollfd, 3, -1) < 1)
             continue;
 
         /* Incoming message on udev socket */
