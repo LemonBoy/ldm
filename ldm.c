@@ -3,6 +3,7 @@
 #include <malloc.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <limits.h>
 #include <string.h>
 #include <signal.h>
 #include <syslog.h>
@@ -177,20 +178,23 @@ filesystem_needs_id_fix (char *fs)
 char *
 device_create_mountpoint (struct device_t *device)
 {
-    char tmp[256];
+    char tmp[PATH_MAX];
     char *c;
+    const char *label, *uuid, *serial;
 
-    strcpy(tmp, MOUNT_PATH);
+    label = udev_device_get_property_value(device->udev, "ID_FS_LABEL");
+    uuid = udev_device_get_property_value(device->udev, "ID_FS_UUID");
+    serial = udev_device_get_property_value(device->udev, "ID_SERIAL");
 
-    if (udev_device_get_property_value(device->udev, "ID_FS_LABEL") != NULL)
-        strcat(tmp, udev_device_get_property_value(device->udev, "ID_FS_LABEL"));
-    else if (udev_device_get_property_value(device->udev, "ID_FS_UUID") != NULL)
-        strcat(tmp, udev_device_get_property_value(device->udev, "ID_FS_UUID"));
-    else if (udev_device_get_property_value(device->udev, "ID_SERIAL") != NULL)
-        strcat(tmp, udev_device_get_property_value(device->udev, "ID_SERIAL"));
+    if (label)
+        snprintf(tmp, sizeof(tmp), "%s%s", MOUNT_PATH, label);
+    else if (uuid)
+        snprintf(tmp, sizeof(tmp), "%s%s", MOUNT_PATH, uuid);
+    else if (serial)
+        snprintf(tmp, sizeof(tmp), "%s%s", MOUNT_PATH, serial);
 
     /* Replace the whitespaces */
-    for (c = (char*)&tmp; *c; c++) {
+    for (c = tmp; *c; c++) {
        if (*c == ' ')
            *c = '_';
     }
@@ -237,12 +241,9 @@ device_destroy (struct device_t *dev)
             break;
     }
 
-    if (dev->devnode)
-        free(dev->devnode);
-    if (dev->filesystem)
-        free(dev->filesystem);
-    if (dev->mountpoint)
-        free(dev->mountpoint);
+    free(dev->devnode);
+    free(dev->filesystem);
+    free(dev->mountpoint);
     udev_device_unref(dev->udev);
 
     free(dev);
@@ -364,7 +365,7 @@ device_mount (struct udev_device *dev)
     id_fmt[0] = 0;
 
     if (needs_mount_id) 
-        sprintf(id_fmt, ID_FMT, g_uid, g_gid);
+        snprintf(id_fmt, sizeof(id_fmt), ID_FMT, g_uid, g_gid);
 
     ctx = mnt_new_context();
 
@@ -514,14 +515,14 @@ daemonize (void)
     }
 
     if (chdir("/") < 0) {
-        printf("chdir() failed\n");
+        fprintf(stderr, "chdir() failed\n");
         return 0;
     }
 
     umask(022);
 
     if (setsid() < 0) {
-        printf("setsid() failed\n");
+        fprintf(stderr, "setsid() failed\n");
         return 0;
     }
 
@@ -668,7 +669,7 @@ main (int argc, char *argv[])
     g_running = 1;
 
     while (g_running) {
-        if (poll((struct pollfd *)&pollfd, 3, -1) < 1)
+        if (poll(pollfd, 3, -1) < 1)
             continue;
 
         /* Incoming message on udev socket */
