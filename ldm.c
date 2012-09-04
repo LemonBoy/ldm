@@ -13,6 +13,7 @@
 #include <mntent.h>
 #include <sys/inotify.h>
 #include <libmount/libmount.h>
+#include <errno.h>
 
 #define VERSION_STR "0.3"
 
@@ -300,7 +301,7 @@ device_new (struct udev_device *dev)
 
     device->type = DEVICE_UNK;
 
-    if (!device->filesystem) {
+    if (!device->filesystem || !strcmp(device->filesystem, "swap")) {
         device_destroy(device);
         return NULL;
     }
@@ -309,7 +310,9 @@ device_new (struct udev_device *dev)
         !strcmp(dev_type,   "disk")     || 
         !strcmp(dev_idtype, "floppy"))  {
         device->type = DEVICE_VOLUME;
-    } else if (!strcmp(dev_idtype, "cd")) {
+    } 
+        
+    if (!strcmp(dev_idtype, "cd")) {
         device->type = DEVICE_CD;
     }
 
@@ -364,8 +367,9 @@ device_mount (struct udev_device *dev)
 
     id_fmt[0] = 0;
 
-    if (needs_mount_id) 
+    if (needs_mount_id) {
         snprintf(id_fmt, sizeof(id_fmt), ID_FMT, g_uid, g_gid);
+    }
 
     ctx = mnt_new_context();
 
@@ -374,8 +378,12 @@ device_mount (struct udev_device *dev)
     mnt_context_set_target(ctx, device->mountpoint);
     mnt_context_set_options(ctx, id_fmt);
 
+    if (device->type == DEVICE_CD) {
+        mnt_context_set_mflags(ctx, MS_RDONLY);
+    }
+
     if (mnt_context_mount(ctx)) {
-        syslog(LOG_ERR, "Error while mounting %s", device->devnode);
+        syslog(LOG_ERR, "Error while mounting %s (%s)", device->devnode, strerror(errno));
         mnt_free_context(ctx);
         device_unmount(dev);
         return 0;
@@ -416,7 +424,7 @@ device_unmount (struct udev_device *dev)
 
     if (device_is_mounted(device->devnode)) {
         if (mnt_context_umount(ctx)) {
-            syslog(LOG_ERR, "Error while unmounting %s", device->devnode);
+            syslog(LOG_ERR, "Error while unmounting %s (%s)", device->devnode, strerror(errno));
             mnt_free_context(ctx);
             return 0;
         }
