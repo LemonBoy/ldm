@@ -184,7 +184,7 @@ device_create_mountpoint (struct device_t *device)
     const char *label, *uuid, *serial;
     struct stat st;
 
-    label = udev_device_get_property_value(device->udev, "ID_FS_LABEL_SAFE");
+    label = udev_device_get_property_value(device->udev, "ID_FS_LABEL");
     uuid = udev_device_get_property_value(device->udev, "ID_FS_UUID");
     serial = udev_device_get_property_value(device->udev, "ID_SERIAL");
 
@@ -196,6 +196,12 @@ device_create_mountpoint (struct device_t *device)
         snprintf(tmp, sizeof(tmp), "%s%s", MOUNT_PATH, serial);
     else
         return NULL;
+
+    /* Replace the whitespaces */
+    for (c = tmp; *c; c++) {
+       if (*c == ' ')
+           *c = '_';
+    }
 
     /* Check if there's another folder with the same name */
     while (!stat(tmp, &st)) {
