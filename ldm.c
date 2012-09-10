@@ -182,6 +182,7 @@ device_create_mountpoint (struct device_t *device)
     char tmp[PATH_MAX];
     char *c;
     const char *label, *uuid, *serial;
+    struct stat st;
 
     label = udev_device_get_property_value(device->udev, "ID_FS_LABEL");
     uuid = udev_device_get_property_value(device->udev, "ID_FS_UUID");
@@ -193,6 +194,8 @@ device_create_mountpoint (struct device_t *device)
         snprintf(tmp, sizeof(tmp), "%s%s", MOUNT_PATH, uuid);
     else if (serial)
         snprintf(tmp, sizeof(tmp), "%s%s", MOUNT_PATH, serial);
+    else
+        return NULL;
 
     /* Replace the whitespaces */
     for (c = tmp; *c; c++) {
@@ -200,7 +203,15 @@ device_create_mountpoint (struct device_t *device)
            *c = '_';
     }
 
-    /* It can't fail as every disc should have at least the serial */
+    /* Check if there's another folder with the same name */
+    while (!stat(tmp, &st)) {
+        /* We tried hard and failed */
+        if (strlen(tmp) == sizeof(tmp) - 2) {
+            return NULL;
+        }
+        /* Append a trailing _ */
+        strcat(tmp, "_");
+    }
 
     return s_strdup(tmp);
 }
@@ -330,6 +341,12 @@ device_new (struct udev_device *dev)
         } else {
             device->mountpoint = device_create_mountpoint(device);
         }
+    }
+
+    if (!device->mountpoint) {
+        syslog(LOG_ERR, "Couldn't make up a mountpoint name. Please report this bug.");
+        device_destroy(device);
+        return NULL;
     }
 
     if (!device_register(device)) {
