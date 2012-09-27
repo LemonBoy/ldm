@@ -51,7 +51,7 @@ char * s_strdup(const char *str);
 int lock_create(int pid);
 int lock_remove(void);
 int lock_exist(void);
-struct libmnt_fs * fstab_search (struct libmnt_table *tab, struct device_t *device);
+struct libmnt_fs * fstab_search (struct libmnt_table *tab, struct udev_device *device);
 int device_has_media(struct device_t *device);
 int filesystem_needs_id_fix(char *fs);
 char * device_create_mountpoint(struct device_t *device);
@@ -114,20 +114,21 @@ lock_exist (void)
 #define MTAB_PATH   "/proc/self/mounts"
 
 struct libmnt_fs *
-fstab_search (struct libmnt_table *tab, struct device_t *device)
+fstab_search (struct libmnt_table *tab, struct udev_device *udev)
 {
     struct libmnt_fs *ret;
     const char *tmp;
 
     /* Try matching the /dev node */
-    ret = mnt_table_find_source(tab, device->devnode, MNT_ITER_FORWARD);
+    tmp = udev_device_get_devnode(udev);
+    ret = mnt_table_find_source(tab, tmp? tmp: "", MNT_ITER_FORWARD);
     if (ret) return ret;
     /* Try matching the uuid */
-    tmp = udev_device_get_property_value(device->udev, "ID_FS_UUID");
+    tmp = udev_device_get_property_value(udev, "ID_FS_UUID");
     ret = mnt_table_find_tag(tab, "UUID", tmp? tmp: "", MNT_ITER_FORWARD);
     if (tmp && ret) return ret;
     /* Try matching the label */
-    tmp = udev_device_get_property_value(device->udev, "ID_FS_LABEL");
+    tmp = udev_device_get_property_value(udev, "ID_FS_LABEL");
     ret = mnt_table_find_tag(tab, "LABEL", tmp? tmp: "", MNT_ITER_FORWARD);
     if (tmp && ret) return ret;
 
@@ -135,11 +136,11 @@ fstab_search (struct libmnt_table *tab, struct device_t *device)
 }
 
 int
-fstab_has_option (struct libmnt_table *tab, struct device_t *device, const char *option)
+fstab_has_option (struct libmnt_table *tab, struct udev_device *udev, const char *option)
 {
     struct libmnt_fs *ret;
 
-    ret = fstab_search(tab, device);
+    ret = fstab_search(tab, udev);
     if (!ret)
         return 0;
 
@@ -206,9 +207,8 @@ device_create_mountpoint (struct device_t *device)
     /* Check if there's another folder with the same name */
     while (!stat(tmp, &st)) {
         /* We tried hard and failed */
-        if (strlen(tmp) == sizeof(tmp) - 2) {
+        if (strlen(tmp) == sizeof(tmp) - 2) 
             return NULL;
-        }
         /* Append a trailing _ */
         strcat(tmp, "_");
     }
@@ -297,6 +297,10 @@ device_new (struct udev_device *dev)
     const char *dev_type;
     const char *dev_idtype;
    
+    /* First of all check wether we're dealing with a noauto device */
+    if (fstab_has_option(g_fstab, dev, "+noauto")) 
+        return NULL;
+
     device = calloc(1, sizeof(struct device_t));
 
     if (!device)
@@ -323,9 +327,8 @@ device_new (struct udev_device *dev)
         device->type = DEVICE_VOLUME;
     } 
         
-    if (!strcmp(dev_idtype, "cd")) {
+    if (!strcmp(dev_idtype, "cd")) 
         device->type = DEVICE_CD;
-    }
 
     if (device->type == DEVICE_UNK) {
         device_destroy(device);
@@ -333,7 +336,7 @@ device_new (struct udev_device *dev)
     }
 
     device->has_media = device_has_media(device);
-    fstab_entry = fstab_search(g_fstab, device);
+    fstab_entry = fstab_search(g_fstab, device->udev);
 
     if (device->has_media) {
         if (fstab_entry) {
@@ -369,9 +372,9 @@ device_mount (struct udev_device *dev)
 
     if (!device)
         return 0;
-    
-    /* If the device has no media or has the noauto option set in the fstab return ok */
-    if (!device->has_media || fstab_has_option(g_fstab, device, "+noauto"))
+
+    /* If the device has no media return ok */
+    if (!device->has_media)
         return 1;
 
     mkdir(device->mountpoint, 755);
@@ -384,9 +387,8 @@ device_mount (struct udev_device *dev)
 
     id_fmt[0] = 0;
 
-    if (needs_mount_id) {
+    if (needs_mount_id) 
         snprintf(id_fmt, sizeof(id_fmt), ID_FMT, g_uid, g_gid);
-    }
 
     ctx = mnt_new_context();
 
@@ -395,9 +397,8 @@ device_mount (struct udev_device *dev)
     mnt_context_set_target(ctx, device->mountpoint);
     mnt_context_set_options(ctx, id_fmt);
 
-    if (device->type == DEVICE_CD) {
+    if (device->type == DEVICE_CD) 
         mnt_context_set_mflags(ctx, MS_RDONLY);
-    }
 
     if (mnt_context_mount(ctx)) {
         syslog(LOG_ERR, "Error while mounting %s (%s)", device->devnode, strerror(errno));
@@ -431,9 +432,8 @@ device_unmount (struct udev_device *dev)
      * execute eject and one when you unplug the device. We already have
      * destroyed the device the first time so the second time it wont find
      * it. So no bitching in the log.                                   */
-    if (!device) {
+    if (!device) 
         return 0;
-    }
 
     ctx = mnt_new_context();
 
