@@ -327,7 +327,7 @@ device_new (struct udev_device *dev)
         device->type = DEVICE_VOLUME;
     } 
         
-    if (!strcmp(dev_idtype, "cd")) 
+    if (dev_idtype && !strcmp(dev_idtype, "cd")) 
         device->type = DEVICE_CD;
 
     if (device->type == DEVICE_UNK) {
