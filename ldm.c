@@ -33,7 +33,7 @@ typedef struct device_t  {
 } device_t;
 
 #define MOUNT_PATH  "/media/"
-#define ID_FMT      "uid=%i,gid=%i"
+#define OPT_FMT     "uid=%i,gid=%i"
 #define MAX_DEVICES 20
 
 /* Static global structs */
@@ -162,19 +162,34 @@ device_has_media (struct device_t *device)
     }
 }
 
+enum {
+    QUIRK_NONE = 0,
+    QUIRK_OWNER_FIX = (1<<0),
+    QUIRK_UTF8_FLAG = (1<<1),
+};
+
 int
-filesystem_needs_id_fix (char *fs)
+filesystem_quirks (char *fs)
 {
     int i;
-    static const char *fs_table [] = {
-        "msdos", "umsdos", "vfat", "exfat", "ntfs", "iso9660", "udf",
+    static const struct {
+        char *name;
+        int quirks;
+    } fs_table [] = {
+        { "msdos" , QUIRK_OWNER_FIX | QUIRK_UTF8_FLAG },
+        { "umsdos", QUIRK_OWNER_FIX | QUIRK_UTF8_FLAG },
+        { "vfat",   QUIRK_OWNER_FIX | QUIRK_UTF8_FLAG },
+        { "exfat",  QUIRK_OWNER_FIX | QUIRK_UTF8_FLAG },
+        { "ntfs",   QUIRK_OWNER_FIX | QUIRK_UTF8_FLAG },
+        { "iso9660",QUIRK_OWNER_FIX | QUIRK_UTF8_FLAG },
+        { "udf",    QUIRK_OWNER_FIX },
     };
 
-    for (i = 0; i < sizeof(fs_table)/sizeof(char*); i++) {
-        if (!strcmp(fs_table[i], fs))
-            return 1;
+    for (i = 0; i < sizeof(fs_table)/(sizeof(char*)+sizeof(int)); i++) {
+        if (!strcmp(fs_table[i].name, fs))
+            return fs_table[i].quirks;
     }
-    return 0;    
+    return QUIRK_NONE;    
 }
 
 char *
@@ -365,8 +380,9 @@ device_mount (struct udev_device *dev)
 {
     struct device_t *device;
     struct libmnt_context *ctx;
-    char id_fmt[256];
-    int needs_mount_id;
+    char opt_fmt[256];
+    char *p;
+    int quirks;
  
     device = device_new(dev);
 
@@ -379,23 +395,28 @@ device_mount (struct udev_device *dev)
 
     mkdir(device->mountpoint, 755);
 
-    /* Microsoft filesystems and filesystems used on optical 
-     * discs require the gid and uid to be passed as mount 
-     * arguments to allow the user to read and write, while 
-     * posix filesystems just need a chown after being mounted */
-    needs_mount_id = filesystem_needs_id_fix(device->filesystem);
+    p = opt_fmt;
 
-    id_fmt[0] = 0;
+    /* Some filesystems just want to watch the world burn */
+    quirks = filesystem_quirks(device->filesystem);
 
-    if (needs_mount_id) 
-        snprintf(id_fmt, sizeof(id_fmt), ID_FMT, g_uid, g_gid);
+    if (quirks != QUIRK_NONE) {
+        /* Microsoft filesystems and filesystems used on optical 
+         * discs require the gid and uid to be passed as mount 
+         * arguments to allow the user to read and write, while 
+         * posix filesystems just need a chown after being mounted */
+        if (quirks & QUIRK_OWNER_FIX)
+            p += sprintf(p, OPT_FMT",", g_uid, g_gid);
+        if (quirks & QUIRK_UTF8_FLAG)
+            p += sprintf(p, "utf8,");
+    }
 
     ctx = mnt_new_context();
 
     mnt_context_set_fstype(ctx, device->filesystem);
     mnt_context_set_source(ctx, device->devnode);
     mnt_context_set_target(ctx, device->mountpoint);
-    mnt_context_set_options(ctx, id_fmt);
+    mnt_context_set_options(ctx, opt_fmt);
 
     if (device->type == DEVICE_CD) 
         mnt_context_set_mflags(ctx, MS_RDONLY);
@@ -409,7 +430,7 @@ device_mount (struct udev_device *dev)
 
     mnt_free_context(ctx);
 
-    if (!needs_mount_id) {
+    if (!(quirks & QUIRK_OWNER_FIX)) {
         if (chown(device->mountpoint, g_uid, g_gid)) {
             syslog(LOG_ERR, "Cannot chown %s", device->mountpoint);
             device_unmount(dev);
