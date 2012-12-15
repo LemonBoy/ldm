@@ -410,6 +410,7 @@ device_mount (struct udev_device *dev)
         if (quirks & QUIRK_UTF8_FLAG)
             p += sprintf(p, "utf8,");
     }
+    *p = 0;
 
     ctx = mnt_new_context();
 
