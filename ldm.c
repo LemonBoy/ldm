@@ -168,14 +168,16 @@ enum {
     QUIRK_UTF8_FLAG = (1<<1),
 };
 
+typedef struct fs_quirk_t {
+    char *name;
+    int quirks;
+} fs_quirk_t;
+
 int
 filesystem_quirks (char *fs)
 {
     int i;
-    static const struct {
-        char *name;
-        int quirks;
-    } fs_table [] = {
+    static const fs_quirk_t fs_table [] = {
         { "msdos" , QUIRK_OWNER_FIX | QUIRK_UTF8_FLAG },
         { "umsdos", QUIRK_OWNER_FIX | QUIRK_UTF8_FLAG },
         { "vfat",   QUIRK_OWNER_FIX | QUIRK_UTF8_FLAG },
@@ -185,7 +187,7 @@ filesystem_quirks (char *fs)
         { "udf",    QUIRK_OWNER_FIX },
     };
 
-    for (i = 0; i < sizeof(fs_table)/(sizeof(char*)+sizeof(int)); i++) {
+    for (i = 0; i < sizeof(fs_table)/sizeof(fs_quirk_t); i++) {
         if (!strcmp(fs_table[i].name, fs))
             return fs_table[i].quirks;
     }
