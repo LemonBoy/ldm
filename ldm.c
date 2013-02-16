@@ -15,7 +15,7 @@
 #include <libmount/libmount.h>
 #include <errno.h>
 
-#define VERSION_STR "0.3"
+#define VERSION_STR "0.4"
 
 enum {
     DEVICE_VOLUME,
@@ -641,7 +641,7 @@ main (int argc, char *argv[])
     struct inotify_event event;
 
     printf("ldm "VERSION_STR"\n");
-    printf("2011-2012 (C) The Lemon Man\n");
+    printf("2011-2013 (C) The Lemon Man\n");
 
     if (getuid() != 0) {
         printf("You have to run this program as root!\n");

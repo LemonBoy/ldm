@@ -1,6 +1,6 @@
 l(ightweight) d(evice) m(ounter)
 ================================
-2011-2012 (C) The Lemon Man
+2011-2013 (C) The Lemon Man
 
 A lightweight daemon that mounts usb drives, cds, dvds or floppys
 automagically. Made for people that have no desktop-manager with
