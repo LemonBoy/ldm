@@ -10,6 +10,11 @@ It does mount every device in /media and names them by either
 fstab rule for that device, if defined.
 Everything in ~20Kb of C code with libudev & libmount as only dependencies.
 
+Blacklisting
+------------
+If you don't want ldm to automount a certain device just slap its uuid into
+the blacklist.h and recompile ldm. It's easy as it sounds.
+
 Install
 -------
 ldm expects a config file at /etc/conf.d/ldm which contains your

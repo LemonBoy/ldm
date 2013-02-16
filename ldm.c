@@ -23,6 +23,12 @@ enum {
     DEVICE_UNK
 };
 
+enum {
+    QUIRK_NONE = 0,
+    QUIRK_OWNER_FIX = (1<<0),
+    QUIRK_UTF8_FLAG = (1<<1),
+};
+
 typedef struct device_t  {
     int                  type;
     char                *filesystem;
@@ -32,19 +38,28 @@ typedef struct device_t  {
     struct udev_device  *udev;
 } device_t;
 
+typedef struct fs_quirk_t {
+    char *name;
+    int quirks;
+} fs_quirk_t;
+
+typedef struct blacklist_entry_t {
+    char *uuid;  
+} blacklist_entry_t;
+
 #define MOUNT_PATH  "/media/"
 #define OPT_FMT     "uid=%i,gid=%i"
 #define MAX_DEVICES 20
 
 /* Static global structs */
 
-static struct libmnt_table *g_fstab;
-static struct libmnt_table *g_mtab;
-static struct device_t     *g_devices[MAX_DEVICES];
-static FILE                *g_lockfd;
-static int                  g_running;
-static int                  g_uid;
-static int                  g_gid;
+static struct libmnt_table     *g_fstab;
+static struct libmnt_table     *g_mtab;
+static struct device_t         *g_devices[MAX_DEVICES];
+static FILE                    *g_lockfd;
+static int                      g_running;
+static int                      g_uid;
+static int                      g_gid;
 
 /* Functions declaration */
 char * s_strdup(const char *str);
@@ -161,17 +176,6 @@ device_has_media (struct device_t *device)
 	    return 0;
     }
 }
-
-enum {
-    QUIRK_NONE = 0,
-    QUIRK_OWNER_FIX = (1<<0),
-    QUIRK_UTF8_FLAG = (1<<1),
-};
-
-typedef struct fs_quirk_t {
-    char *name;
-    int quirks;
-} fs_quirk_t;
 
 int
 filesystem_quirks (char *fs)
@@ -305,6 +309,28 @@ device_is_mounted (char *node)
     return (mnt_table_find_source(g_mtab, node, MNT_ITER_FORWARD) != NULL);
 }
 
+int
+device_is_blacklisted (struct udev_device *dev)
+{
+    int j;
+    const char *uuid;
+    static const struct blacklist_entry_t blacklist [] = {
+        #include "blacklist.h"
+    };
+    
+    uuid = udev_device_get_property_value(dev, "ID_FS_UUID");
+
+    if (!uuid)
+        return 0;
+
+    for (j = 0; j < sizeof(blacklist)/sizeof(struct blacklist_entry_t); j++) {
+        if (!strcmp(uuid, blacklist[j].uuid))
+            return 1;
+    }
+
+    return 0;
+}
+
 struct device_t *
 device_new (struct udev_device *dev)
 {
@@ -316,6 +342,9 @@ device_new (struct udev_device *dev)
    
     /* First of all check wether we're dealing with a noauto device */
     if (fstab_has_option(g_fstab, dev, "+noauto")) 
+        return NULL;
+
+    if (device_is_blacklisted(dev))
         return NULL;
 
     device = calloc(1, sizeof(struct device_t));
@@ -434,7 +463,7 @@ device_mount (struct udev_device *dev)
     mnt_free_context(ctx);
 
     if (!(quirks & QUIRK_OWNER_FIX)) {
-        if (chown(device->mountpoint, g_uid, g_gid)) {
+        if (chown(device->mountpoint, (__uid_t)g_uid, (__gid_t)g_gid)) {
             syslog(LOG_ERR, "Cannot chown %s", device->mountpoint);
             device_unmount(dev);
             return 0;
@@ -642,10 +671,10 @@ main (int argc, char *argv[])
                 daemon = 1;
                 break;
             case 'g':
-                g_gid = strtoul(optarg, NULL, 10);
+                g_gid = (int)strtoul(optarg, NULL, 10);
                 break;
             case 'u':
-                g_uid = strtoul(optarg, NULL, 10);
+                g_uid = (int)strtoul(optarg, NULL, 10);
                 break;
             default:
                 return 1;
