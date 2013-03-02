@@ -34,7 +34,6 @@ typedef struct device_t  {
     char                *filesystem;
     char                *devnode;
     char                *mountpoint;
-    int                  has_media;
     struct udev_device  *udev;
 } device_t;
 
@@ -382,10 +381,9 @@ device_new (struct udev_device *dev)
         return NULL;
     }
 
-    device->has_media = device_has_media(device);
     fstab_entry = fstab_search(g_fstab, device->udev);
 
-    if (!device->has_media) {
+    if (!device_has_media(device)) {
         device_destroy(device);
         return NULL;
     }
