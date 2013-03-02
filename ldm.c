@@ -15,7 +15,7 @@
 #include <libmount/libmount.h>
 #include <errno.h>
 
-#define VERSION_STR "0.4"
+#define VERSION_STR "0.4.1"
 
 enum {
     DEVICE_VOLUME,
@@ -353,6 +353,7 @@ device_new (struct udev_device *dev)
         return NULL;
 
     device->udev = dev;
+    udev_device_ref(device->udev);
 
     device->devnode = s_strdup(udev_device_get_devnode(dev));
     device->filesystem = s_strdup(udev_device_get_property_value(dev, "ID_FS_TYPE"));
@@ -384,12 +385,15 @@ device_new (struct udev_device *dev)
     device->has_media = device_has_media(device);
     fstab_entry = fstab_search(g_fstab, device->udev);
 
-    if (device->has_media) {
-        if (fstab_entry) {
-            device->mountpoint = s_strdup(mnt_fs_get_target(fstab_entry));
-        } else {
-            device->mountpoint = device_create_mountpoint(device);
-        }
+    if (!device->has_media) {
+        device_destroy(device);
+        return NULL;
+    }
+
+    if (fstab_entry) {
+        device->mountpoint = s_strdup(mnt_fs_get_target(fstab_entry));
+    } else {
+        device->mountpoint = device_create_mountpoint(device);
     }
 
     if (!device->mountpoint) {
@@ -419,10 +423,6 @@ device_mount (struct udev_device *dev)
 
     if (!device)
         return 0;
-
-    /* If the device has no media return ok */
-    if (!device->has_media)
-        return 1;
 
     mkdir(device->mountpoint, 755);
 
@@ -470,6 +470,7 @@ device_mount (struct udev_device *dev)
         }
     }
 
+
     return 1;
 }
 
@@ -481,26 +482,19 @@ device_unmount (struct udev_device *dev)
 
     device = device_search((char *)udev_device_get_devnode(dev));
 
-    /* When using eject the remove command is issued 2 times, one when you 
-     * execute eject and one when you unplug the device. We already have
-     * destroyed the device the first time so the second time it wont find
-     * it. So no bitching in the log.                                   */
     if (!device) 
         return 0;
 
-    ctx = mnt_new_context();
-
-    mnt_context_set_target(ctx, device->devnode);
-
     if (device_is_mounted(device->devnode)) {
+        ctx = mnt_new_context();
+        mnt_context_set_target(ctx, device->devnode);
         if (mnt_context_umount(ctx)) {
             syslog(LOG_ERR, "Error while unmounting %s (%s)", device->devnode, strerror(errno));
             mnt_free_context(ctx);
             return 0;
         }
+        mnt_free_context(ctx);
     }
-    
-    mnt_free_context(ctx);
 
     rmdir(device->mountpoint);
 
@@ -522,8 +516,6 @@ device_change (struct udev_device *dev)
             return 0;
     }
     /* ...and mount the new one if present */    
-    if (!device_new(dev))
-        return 0;
     if (!device_mount(dev))
         return 0;
 
@@ -565,6 +557,7 @@ mount_plugged_devices (struct udev *udev)
 
         if (!device_is_mounted((char *)dev_node))
             device_mount(dev);
+        udev_device_unref(dev);
     }
     udev_enumerate_unref(udev_enum);
 }
@@ -765,6 +758,8 @@ main (int argc, char *argv[])
                 device_unmount(device);
             else if (!strcmp(action, "change"))
                 device_change(device);
+
+            udev_device_unref(device);
         }
         /* Incoming message on inotify socket */
         if (pollfd[1].revents & POLLIN) {
