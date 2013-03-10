@@ -21,6 +21,10 @@ ldm expects a config file at /etc/conf.d/ldm which contains your
 user uid and gid. Don't be scared, it's just a matter of writing
 down 2 lines using your favourite editor. Optionally you can add 
 your executables as callbacks for mount / onmount / change events.
+ldm will pass 3 parameters to your executable:
+0 - path to your executable 
+1 - device node (i.e. /dev/sdb1)
+2 - mountpoint (i.e. /media/FLASH)
 
 ```
 USER_GID=<output of `id -g` ran from your user>
