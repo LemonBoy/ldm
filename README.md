@@ -19,11 +19,16 @@ Install
 -------
 ldm expects a config file at /etc/conf.d/ldm which contains your
 user uid and gid. Don't be scared, it's just a matter of writing
-down 2 lines using your favourite editor.
+down 2 lines using your favourite editor. Optionally you can add 
+your executables as callbacks for mount / onmount / change events.
 
 ```
 USER_GID=<output of `id -g` ran from your user>
 USER_UID=<output of `id -u` ran from your user>
+
+ON_MOUNT=<path to executable>
+ON_CHANGE=<path to executable>
+ON_UMOUNT=<path to executable>
 ```
 
 That's all, I said it was easy!

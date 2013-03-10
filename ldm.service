@@ -3,7 +3,7 @@ Description=lightweight device mounter
 
 [Service]
 EnvironmentFile=/etc/conf.d/ldm
-ExecStart=/usr/bin/ldm -u $USER_UID -g $USER_GID
+ExecStart=/usr/bin/ldm -u $USER_UID -g $USER_GID --onmount=${ON_MOUNT} --onchange=${ON_CHANGE} --onumount=${ON_UMOUNT}
 
 [Install]
 WantedBy=multi-user.target

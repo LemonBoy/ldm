@@ -14,6 +14,7 @@
 #include <sys/inotify.h>
 #include <libmount/libmount.h>
 #include <errno.h>
+#include <getopt.h>
 
 #define VERSION_STR "0.4.1"
 
@@ -59,6 +60,9 @@ static FILE                    *g_lockfd;
 static int                      g_running;
 static int                      g_uid;
 static int                      g_gid;
+static char                    *g_onmount_cmd;
+static char                    *g_onumount_cmd;
+static char                    *g_onchange_cmd;
 
 /* Functions declaration */
 char * s_strdup(const char *str);
@@ -81,6 +85,8 @@ int force_reload_table (struct libmnt_table **table, const char *path);
 void mount_plugged_devices(struct udev *udev);
 void sig_handler(int signal);
 int daemonize(void);
+char * check_executable(const char *file);
+void exec_callback(const char *file, const struct device_t *device);
 
 /* A less stupid s_strdup */
 
@@ -90,6 +96,37 @@ s_strdup(const char *str)
     if (!str)
         return NULL;
     return (char *)strdup(str);
+}
+
+/* Working with user callbacks */
+
+char * 
+check_executable(const char *file)
+{
+    if( access( file, F_OK | X_OK ) != -1 ) 
+		return s_strdup( file );
+	
+	return NULL;
+}
+
+void 
+exec_callback(const char *file, const struct device_t *device )
+{
+	pid_t pid;
+	
+	pid = fork();
+	
+	if( pid == 0 ) {  //child
+        setgid( g_gid );
+        setuid( g_uid );
+	
+		if( execl(file, file, device->devnode, device->mountpoint, NULL) == -1 )
+            syslog(LOG_ERR, "Error trying to launch %s (%s)", file, strerror(errno));
+            
+        _exit( EXIT_FAILURE );
+	} else if( pid < 0 ) { 
+	    syslog(LOG_ERR, "fork() failed.");
+	}
 }
 
 /* Locking functions */
@@ -468,6 +505,8 @@ device_mount (struct udev_device *dev)
         }
     }
 
+    if( g_onmount_cmd != NULL )
+        exec_callback(g_onmount_cmd, device );
 
     return 1;
 }
@@ -498,6 +537,9 @@ device_unmount (struct udev_device *dev)
 
     device_destroy(device);
     
+    if( g_onumount_cmd != NULL )
+        exec_callback(g_onumount_cmd, device );
+    
     return 1;
 }
 
@@ -516,6 +558,9 @@ device_change (struct udev_device *dev)
     /* ...and mount the new one if present */    
     if (!device_mount(dev))
         return 0;
+
+    if( g_onchange_cmd != NULL )
+        exec_callback(g_onchange_cmd, device );
 
     return 1;
 }
@@ -630,6 +675,16 @@ main (int argc, char *argv[])
     int                  notifyfd;
     int                  fswatch;
     struct inotify_event event;
+    int option_index;
+    struct option long_options[] = {
+        {"daemon",    no_argument,       0,  'd' },
+        {"uid",       required_argument, 0,  'u' },
+        {"gid",       required_argument, 0,  'g' },
+        {"onmount",   optional_argument, 0,  0   },
+        {"onumount",  optional_argument, 0,  0   },
+        {"onchange",  optional_argument, 0,  0   },
+        {0,           0,                 0,  0   }
+    };
 
     printf("ldm "VERSION_STR"\n");
     printf("2011-2013 (C) The Lemon Man\n");
@@ -655,8 +710,12 @@ main (int argc, char *argv[])
     g_uid   = -1;
     g_gid   = -1;
     fswatch = -1;
+    option_index = 0;
+    g_onmount_cmd = NULL;
+    g_onumount_cmd = NULL;
+    g_onchange_cmd = NULL;
 
-    while ((opt = getopt(argc, argv, "dg:u:")) != -1) {
+    while ((opt = getopt_long(argc, argv, "dg:u:", long_options, &option_index)) != -1) {
         switch (opt) {
             case 'd':
                 daemon = 1;
@@ -667,17 +726,28 @@ main (int argc, char *argv[])
             case 'u':
                 g_uid = (int)strtoul(optarg, NULL, 10);
                 break;
+            case 0  :
+                if( !strcmp(long_options[option_index].name, "onmount") ) {
+					g_onmount_cmd = check_executable(optarg);
+				} else if( !strcmp(long_options[option_index].name, "onumount") ) {
+					g_onumount_cmd = check_executable(optarg);
+				} else if( !strcmp(long_options[option_index].name, "onchange") ) {
+					g_onchange_cmd = check_executable(optarg);
+				} else {
+					return 1;
+				}
+				break;
             default:
                 return 1;
         }
     }
 
+    openlog("ldm", LOG_CONS, LOG_DAEMON);
+
     if (g_uid < 0 || g_gid < 0) {
         printf("You must supply your gid/uid!\n");
         return 1;
     }
-
-    openlog("ldm", LOG_CONS, LOG_DAEMON);
 
     if (daemon && !daemonize()) {
         printf("Could not spawn the daemon...\n");
