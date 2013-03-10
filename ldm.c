@@ -12,6 +12,7 @@
 #include <libudev.h>
 #include <mntent.h>
 #include <sys/inotify.h>
+#include <sys/wait.h>
 #include <libmount/libmount.h>
 #include <errno.h>
 
@@ -26,7 +27,7 @@ enum {
 enum {
     QUIRK_NONE = 0,
     QUIRK_OWNER_FIX = (1<<0),
-    QUIRK_UTF8_FLAG = (1<<1),
+    QUIRK_UTF8_FLAG = (1<<1)
 };
 
 typedef struct device_t  {
@@ -46,9 +47,10 @@ typedef struct blacklist_entry_t {
     char *uuid;  
 } blacklist_entry_t;
 
-#define MOUNT_PATH  "/media/"
-#define OPT_FMT     "uid=%i,gid=%i"
-#define MAX_DEVICES 20
+#define MOUNT_PATH      "/media/"
+#define CALLBACK_PATH   NULL
+#define OPT_FMT         "uid=%i,gid=%i"
+#define MAX_DEVICES     20
 
 /* Static global structs */
 
@@ -120,6 +122,35 @@ lock_exist (void)
     if (f)
         fclose(f);
     return (f != NULL);
+}
+
+/* Spawn helper */
+
+int
+spawn_helper (const char *helper, const char *action, char *mountpoint)
+{
+    pid_t child_pid;
+    int ret;
+
+    if (!helper)
+        return 0;
+
+    child_pid = fork();
+
+    if (child_pid < 0)
+        return 0;
+
+    if (child_pid > 0) {
+        wait(&ret);
+        /* Return the exit code or 0 if something went wrong */
+        return WIFEXITED(ret) ? WEXITSTATUS(ret) : 0;
+    }
+
+    execvp(helper, (char *[]){ (char *)helper, (char *)action, mountpoint, NULL });
+    /* Should never reach this */
+    syslog(LOG_ERR, "Could not execute \"%s\"", helper);
+
+    return 0;
 }
 
 /* Convenience function for fstab handling */
@@ -322,7 +353,7 @@ device_is_blacklisted (struct udev_device *dev)
     if (!uuid)
         return 0;
 
-    for (j = 0; j < sizeof(blacklist)/sizeof(struct blacklist_entry_t); j++) {
+    for (j = 0; blacklist[j].uuid; j++) {
         if (!strcmp(uuid, blacklist[j].uuid))
             return 1;
     }
@@ -468,6 +499,7 @@ device_mount (struct udev_device *dev)
         }
     }
 
+    spawn_helper(CALLBACK_PATH, "mount", device->mountpoint);
 
     return 1;
 }
@@ -495,6 +527,8 @@ device_unmount (struct udev_device *dev)
     }
 
     rmdir(device->mountpoint);
+
+    spawn_helper(CALLBACK_PATH, "unmount", device->mountpoint);
 
     device_destroy(device);
     

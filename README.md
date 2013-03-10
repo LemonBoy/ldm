@@ -8,7 +8,14 @@ all the bells and whistles but still want to enjoy automount.
 It does mount every device in /media and names them by either
 (in order) volume label, volume uuid or device serial or using the
 fstab rule for that device, if defined.
-Everything in ~20Kb of C code with libudev & libmount as only dependencies.
+Everything in ~30Kb of C code with libudev & libmount as only dependencies.
+
+Callbacks
+---------
+To execute a script after a device is mounted/unmounted just edit ldm.c
+and point CALLBACK__PATH to your script/program (must be +x), it will be
+executed with the action performed (mount/unmount) and the mountpoint as 
+arguments respectively.
 
 Blacklisting
 ------------
