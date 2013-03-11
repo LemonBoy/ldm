@@ -146,11 +146,17 @@ spawn_helper (const char *helper, const char *action, char *mountpoint)
         return WIFEXITED(ret) ? WEXITSTATUS(ret) : 0;
     }
 
+    /* Drop the root priviledges. Oh and the bass too. */
+    setgid(g_gid);
+    setuid(g_uid);
+
     execvp(helper, (char *[]){ (char *)helper, (char *)action, mountpoint, NULL });
     /* Should never reach this */
     syslog(LOG_ERR, "Could not execute \"%s\"", helper);
+    /* Die */
+    _Exit(1);
 
-    return 0;
+    return 0xdeadbeef;
 }
 
 /* Convenience function for fstab handling */
