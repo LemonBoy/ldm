@@ -43,10 +43,6 @@ typedef struct fs_quirk_t {
     int quirks;
 } fs_quirk_t;
 
-typedef struct blacklist_entry_t {
-    char *uuid;  
-} blacklist_entry_t;
-
 #define MOUNT_PATH      "/media/"
 #define CALLBACK_PATH   NULL
 #define OPT_FMT         "uid=%i,gid=%i"
@@ -345,28 +341,6 @@ device_is_mounted (char *node)
     return (mnt_table_find_source(g_mtab, node, MNT_ITER_FORWARD) != NULL);
 }
 
-int
-device_is_blacklisted (struct udev_device *dev)
-{
-    int j;
-    const char *uuid;
-    static const struct blacklist_entry_t blacklist [] = {
-        #include "blacklist.h"
-    };
-    
-    uuid = udev_device_get_property_value(dev, "ID_FS_UUID");
-
-    if (!uuid)
-        return 0;
-
-    for (j = 0; blacklist[j].uuid; j++) {
-        if (!strcmp(uuid, blacklist[j].uuid))
-            return 1;
-    }
-
-    return 0;
-}
-
 struct device_t *
 device_new (struct udev_device *dev)
 {
@@ -378,9 +352,6 @@ device_new (struct udev_device *dev)
    
     /* First of all check wether we're dealing with a noauto device */
     if (fstab_has_option(g_fstab, dev, "+noauto")) 
-        return NULL;
-
-    if (device_is_blacklisted(dev))
         return NULL;
 
     device = calloc(1, sizeof(struct device_t));
