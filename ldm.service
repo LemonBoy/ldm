@@ -4,6 +4,7 @@ Description=lightweight device mounter
 [Service]
 EnvironmentFile=/etc/conf.d/ldm
 ExecStart=/usr/bin/ldm -u $USER_UID -g $USER_GID
+KillMode=process
 
 [Install]
 WantedBy=multi-user.target

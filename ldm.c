@@ -574,7 +574,7 @@ mount_plugged_devices (struct udev *udev)
 void
 sig_handler (int signal)
 {
-    if (signal == SIGINT || signal == SIGTERM)
+    if (signal == SIGINT || signal == SIGTERM || signal == SIGHUP)
         g_running = 0;
 }
 
@@ -697,10 +697,10 @@ main (int argc, char *argv[])
 
     signal(SIGTERM, sig_handler);
     signal(SIGINT , sig_handler);
+    signal(SIGHUP , sig_handler);
 
     syslog(LOG_INFO, "ldm "VERSION_STR);
     syslog(LOG_INFO, "Starting up...");
-
  
     /* Create the udev struct/monitor */
     udev = udev_new();
@@ -793,10 +793,10 @@ cleanup:
     close(notifyfd);
     close(pollfd[2].fd);
 
+    device_list_clear();
+
     udev_monitor_unref(monitor);
     udev_unref(udev);
-
-    device_list_clear();
 
     mnt_free_table(g_fstab);
     mnt_free_table(g_mtab);
