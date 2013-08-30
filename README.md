@@ -21,6 +21,7 @@ Blacklisting
 ------------
 If you don't want ldm to automount a certain device just write a fstab 
 entry for it, specifying the `noauto` option.
+
 Alternatively porvide a callback. Before a mount is done, the callback will
 be executed with `test` action. When the exit code is not 0, the mount will
 not be perfomed.
