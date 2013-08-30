@@ -44,7 +44,6 @@ typedef struct fs_quirk_t {
 } fs_quirk_t;
 
 #define MOUNT_PATH      "/media/"
-#define CALLBACK_PATH   NULL
 #define OPT_FMT         "uid=%i,gid=%i"
 #define MAX_DEVICES     20
 
@@ -57,6 +56,7 @@ static FILE                    *g_lockfd;
 static int                      g_running;
 static int                      g_uid;
 static int                      g_gid;
+char                           *callback = NULL;
 
 /* Functions declaration */
 char * s_strdup(const char *str);
@@ -123,30 +123,30 @@ lock_exist (void)
 /* Spawn helper */
 
 int
-spawn_helper (const char *helper, const char *action, char *mountpoint)
+spawn_helper (const char *helper, const char *action, char *mountpoint, char *filesystem)
 {
     pid_t child_pid;
     int ret;
 
     if (!helper)
-        return 0;
+        return -1;
 
     child_pid = fork();
 
     if (child_pid < 0)
-        return 0;
+        return -2;
 
     if (child_pid > 0) {
         wait(&ret);
         /* Return the exit code or 0 if something went wrong */
-        return WIFEXITED(ret) ? WEXITSTATUS(ret) : 0;
+        return WIFEXITED(ret) ? WEXITSTATUS(ret) : -3;
     }
 
     /* Drop the root priviledges. Oh and the bass too. */
     setgid(g_gid);
     setuid(g_uid);
 
-    execvp(helper, (char *[]){ (char *)helper, (char *)action, mountpoint, NULL });
+    execvp(helper, (char *[]){ (char *)helper, (char *)action, mountpoint, filesystem, NULL });
     /* Should never reach this */
     syslog(LOG_ERR, "Could not execute \"%s\"", helper);
     /* Die */
@@ -430,6 +430,8 @@ device_mount (struct udev_device *dev)
     if (!device)
         return 0;
 
+    if(spawn_helper(callback, "test", device->mountpoint, device->filesystem)!=0) return 0;
+
     mkdir(device->mountpoint, 755);
 
     p = opt_fmt;
@@ -476,7 +478,7 @@ device_mount (struct udev_device *dev)
         }
     }
 
-    spawn_helper(CALLBACK_PATH, "mount", device->mountpoint);
+    spawn_helper(callback, "mount", device->mountpoint, NULL);
 
     return 1;
 }
@@ -505,7 +507,7 @@ device_unmount (struct udev_device *dev)
 
     rmdir(device->mountpoint);
 
-    spawn_helper(CALLBACK_PATH, "unmount", device->mountpoint);
+    spawn_helper(callback, "unmount", device->mountpoint, NULL);
 
     device_destroy(device);
     
@@ -667,7 +669,7 @@ main (int argc, char *argv[])
     g_gid   = -1;
     fswatch = -1;
 
-    while ((opt = getopt(argc, argv, "dg:u:")) != -1) {
+    while ((opt = getopt(argc, argv, "dg:u:c:")) != -1) {
         switch (opt) {
             case 'd':
                 daemon = 1;
@@ -677,6 +679,8 @@ main (int argc, char *argv[])
                 break;
             case 'u':
                 g_uid = (int)strtoul(optarg, NULL, 10);
+            case 'c':
+                callback = strdup(optarg);
                 break;
             default:
                 return 1;
