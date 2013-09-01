@@ -24,7 +24,7 @@ entry for it, specifying the `noauto` option.
 
 Install
 -------
-ldm expects a config file at /etc/conf.d/ldm which contains your
+ldm expects a config file at /etc/ldm.conf which contains your
 user uid and gid. Don't be scared, it's just a matter of writing
 down 2 lines using your favourite editor.
 
