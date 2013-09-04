@@ -165,16 +165,37 @@ fstab_search (struct libmnt_table *tab, struct udev_device *udev)
 
     /* Try matching the /dev node */
     tmp = udev_device_get_devnode(udev);
-    ret = mnt_table_find_source(tab, tmp? tmp: "", MNT_ITER_FORWARD);
-    if (ret) return ret;
+    /* Is it a logical volume */
+    if (strncmp(tmp, "/dev/dm-", 8)) {
+        ret = mnt_table_find_source(tab, tmp, MNT_ITER_FORWARD);
+        if (ret) 
+            return ret;
+    } else {
+        struct udev_list_entry *list_entry;
+        
+        /* Walk all the symbolic links pointing to this volume */
+        udev_list_entry_foreach(list_entry, udev_device_get_devlinks_list_entry(udev)) {
+            ret = mnt_table_find_source(tab, udev_list_entry_get_name(list_entry), MNT_ITER_FORWARD);
+            if (ret) 
+                return ret;
+        }
+    }
+
     /* Try matching the uuid */
     tmp = udev_device_get_property_value(udev, "ID_FS_UUID");
-    ret = mnt_table_find_tag(tab, "UUID", tmp? tmp: "", MNT_ITER_FORWARD);
-    if (tmp && ret) return ret;
+    if (!tmp)
+        return NULL;
+    ret = mnt_table_find_source(tab, tmp, MNT_ITER_FORWARD);
+    if (ret) 
+        return ret;
+
     /* Try matching the label */
     tmp = udev_device_get_property_value(udev, "ID_FS_LABEL");
-    ret = mnt_table_find_tag(tab, "LABEL", tmp? tmp: "", MNT_ITER_FORWARD);
-    if (tmp && ret) return ret;
+    if (!tmp)
+        return NULL;
+    ret = mnt_table_find_source(tab, tmp, MNT_ITER_FORWARD);
+    if (ret) 
+        return ret;
 
     return NULL;
 }
@@ -333,9 +354,10 @@ device_search (char *devnode)
 }
 
 int
-device_is_mounted (char *node)
+device_is_mounted (struct udev_device *dev)
 {
-    return (mnt_table_find_source(g_mtab, node, MNT_ITER_FORWARD) != NULL);
+    /* Use fstab_search to resolve lvm names */
+    return (fstab_search(g_mtab, dev) != NULL);
 }
 
 struct device_t *
@@ -367,7 +389,9 @@ device_new (struct udev_device *dev)
 
     device->type = DEVICE_UNK;
 
-    if (!device->filesystem || !strcmp(device->filesystem, "swap")) {
+    /* Avoid mounting swap partitions and LVM containers, udev issues another
+     * event for each single partition contained */
+    if (!device->filesystem || !strcmp(device->filesystem, "swap") || !strcmp(device->filesystem, "LVM2_member")) { 
         device_destroy(device);
         return NULL;
     }
@@ -489,7 +513,7 @@ device_unmount (struct udev_device *dev)
     if (!device) 
         return 0;
 
-    if (device_is_mounted(device->devnode)) {
+    if (device_is_mounted(dev)) {
         ctx = mnt_new_context();
         mnt_context_set_target(ctx, device->devnode);
         if (mnt_context_umount(ctx)) {
@@ -518,7 +542,7 @@ device_change (struct udev_device *dev)
 
     /* Unmount the old media... */
     if (device) {
-        if (device_is_mounted(device->devnode) && !device_unmount(dev)) 
+        if (device_is_mounted(dev) && !device_unmount(dev)) 
             return 0;
     }
     /* ...and mount the new one if present */    
@@ -535,7 +559,7 @@ check_registered_devices (void)
 
     /* Drop all the devices in the table that aren't mounted anymore */
     for (j = 0; j < MAX_DEVICES; j++) {
-        if (g_devices[j] && !device_is_mounted(g_devices[j]->devnode))
+        if (g_devices[j] && !device_is_mounted(g_devices[j]->udev))
             device_unmount(g_devices[j]->udev);
     }
 
@@ -545,7 +569,6 @@ void
 mount_plugged_devices (struct udev *udev)
 {    
     const char *path;
-    const char *dev_node;
     struct udev_enumerate *udev_enum;
     struct udev_list_entry *devices;
     struct udev_list_entry *entry;
@@ -559,9 +582,8 @@ mount_plugged_devices (struct udev *udev)
     udev_list_entry_foreach(entry, devices) {
         path = udev_list_entry_get_name(entry);
         dev = udev_device_new_from_syspath(udev, path);
-        dev_node = udev_device_get_devnode(dev);
 
-        if (!device_is_mounted((char *)dev_node))
+        if (!device_is_mounted(dev))
             device_mount(dev);
         udev_device_unref(dev);
     }
