@@ -1,0 +1,14 @@
+#!/bin/bash
+
+logger "ldm-helper $1 $2 $3"
+case "$1" in
+    test)
+        case "$2" in
+            *cruxroot|*test) exit 1 ;;
+        esac
+        ;;
+    mount)
+        ;;
+    unmount)
+        ;;
+esac
