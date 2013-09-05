@@ -12,15 +12,19 @@ Everything in ~30Kb of C code with libudev & libmount as only dependencies.
 
 Callbacks
 ---------
-To execute a script after a device is mounted/unmounted just edit ldm.c
-and point CALLBACK_PATH to your script/program (must be +x), it will be
-executed with the action performed (mount/unmount) and the mountpoint as 
+To execute a script after a device is mounted/unmounted just use `-c` to
+point to your script/program (must be +x), it will be executed with the 
+action performed (mount/unmount/test) and the mountpoint and filesystem as 
 arguments respectively.
 
 Blacklisting
 ------------
 If you don't want ldm to automount a certain device just write a fstab 
 entry for it, specifying the `noauto` option.
+
+Alternatively porvide a callback. Before a mount is done, the callback will
+be executed with `test` action. When the exit code is not 0, the mount will
+not be perfomed.
 
 Install
 -------
