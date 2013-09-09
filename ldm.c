@@ -389,9 +389,12 @@ device_new (struct udev_device *dev)
 
     device->type = DEVICE_UNK;
 
-    /* Avoid mounting swap partitions and LVM containers, udev issues another
-     * event for each single partition contained */
-    if (!device->filesystem || !strcmp(device->filesystem, "swap") || !strcmp(device->filesystem, "LVM2_member")) { 
+    /* Avoid mounting swap partitions because we're not intrested in those and LVM/LUKS 
+     * containers as udev issues another event for each single partition contained in them */
+    if (!device->filesystem || 
+        !strcmp(device->filesystem, "swap") || 
+        !strcmp(device->filesystem, "LVM2_member") || 
+        !strcmp(device->filesystem, "crypto_LUKS")) { 
         device_destroy(device);
         return NULL;
     }
