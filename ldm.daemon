@@ -2,7 +2,7 @@
 
 . /etc/rc.conf
 . /etc/rc.d/functions
-. /etc/conf.d/ldm
+. /etc/ldm.conf
 
 PID=`pidof -o %PPID /usr/bin/ldm`
 case "$1" in
