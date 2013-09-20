@@ -123,7 +123,7 @@ lock_exist (void)
 /* Spawn helper */
 
 int
-spawn_helper (const char *helper, const char *action, char *mountpoint, char *filesystem)
+spawn_helper (const char *helper, const char *action, char *mountpoint, char *filesystem, char *devnode)
 {
     pid_t child_pid;
     int ret;
@@ -146,7 +146,7 @@ spawn_helper (const char *helper, const char *action, char *mountpoint, char *fi
     setgid(g_gid);
     setuid(g_uid);
 
-    execvp(helper, (char *[]){ (char *)helper, (char *)action, mountpoint, filesystem, NULL });
+    execvp(helper, (char *[]){ (char *)helper, (char *)action, mountpoint, filesystem, devnode, NULL });
     /* Should never reach this */
     syslog(LOG_ERR, "Could not execute \"%s\"", helper);
     /* Die */
@@ -430,7 +430,7 @@ device_mount (struct udev_device *dev)
     if (!device)
         return 0;
 
-    if(spawn_helper(callback, "test", device->mountpoint, device->filesystem)!=0) return 0;
+    if(spawn_helper(callback, "test", device->mountpoint, device->filesystem, device->devnode)!=0) return 0;
 
     mkdir(device->mountpoint, 755);
 
@@ -478,7 +478,7 @@ device_mount (struct udev_device *dev)
         }
     }
 
-    spawn_helper(callback, "mount", device->mountpoint, NULL);
+    spawn_helper(callback, "mount", device->mountpoint, device->filesystem, device->devnode);
 
     return 1;
 }
@@ -507,7 +507,7 @@ device_unmount (struct udev_device *dev)
 
     rmdir(device->mountpoint);
 
-    spawn_helper(callback, "unmount", device->mountpoint, NULL);
+    spawn_helper(callback, "unmount", device->mountpoint, device->filesystem, device->devnode);
 
     device_destroy(device);
     

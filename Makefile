@@ -10,6 +10,7 @@ OBJS = ${SRCS:.c=.o}
 
 PREFIX?=/usr
 BINDIR=${PREFIX}/bin
+SHAREDIR=${PREFIX}/share/ldm
 DAEMONDIR=/etc/rc.d
 SYSTEMDDIR=/usr/lib/systemd/system
 
@@ -34,6 +35,8 @@ mrproper: clean
 install-main: ldm
 	test -d ${DESTDIR}${BINDIR} || mkdir -p ${DESTDIR}${BINDIR}
 	install -m755 ldm ${DESTDIR}${BINDIR}/ldm
+	test -d ${DESTDIR}${SHAREDIR} || mkdir -p ${DESTDIR}${SHAREDIR}
+	install -m755 ldm ${DESTDIR}${SHAREDIR}/ldm_helper_example
 
 install-daemon: ldm.daemon
 	test -d ${DESTDIR}${DAEMONDIR} || mkdir -p ${DESTDIR}${DAEMONDIR}

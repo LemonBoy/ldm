@@ -1,14 +1,40 @@
 #!/bin/bash
 
-logger "ldm-helper $1 $2 $3"
-case "$1" in
+logger -t "ldm-helper" "$1 $2 $3"
+
+ACTION="$1"
+MOUNTPOINT="$2"
+FILESYSTEM="$3"
+DEVNODE="$4"
+
+case "$ACTION" in
     test)
-        case "$2" in
-            *cruxroot|*test) exit 1 ;;
+        # ** Do not try to mount encrypted filesystems
+        #    (example, ldm does not try that anyway)
+        case "$FILESYSTEM" in
+            crypto_LUKS) exit 1 ;;
+        esac
+
+        # ** Do not mount the root partition from my other linux
+        case "$MOUNTPOINT" in
+            *cruxroot) exit 1 ;;
+        esac
+
+        # ** Do not mount mapper devices, these are usually already mounted
+        #    when using pmount.
+        case "$DEVNODE" in
+            *mapper*) exit 1 ;;
         esac
         ;;
     mount)
+        case "$2" in
+            # ** Automatic backuo when appropriate media is inserted
+            *backup-0mark-sd)
+                sudo /opt/bin/rdbks "$2"
+            ;;
+        esac
         ;;
     unmount)
+        # No examples yet. Maybe ejection of optical media?
         ;;
 esac
