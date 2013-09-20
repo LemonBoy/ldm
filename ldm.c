@@ -16,7 +16,7 @@
 #include <libmount/libmount.h>
 #include <errno.h>
 
-#define VERSION_STR "0.4.1"
+#define VERSION_STR "0.4.2"
 
 enum {
     DEVICE_VOLUME,
@@ -43,7 +43,7 @@ typedef struct fs_quirk_t {
     int quirks;
 } fs_quirk_t;
 
-#define MOUNT_PATH      "/media/"
+#define MOUNT_PATH      "/mnt/"
 #define OPT_FMT         "uid=%i,gid=%i"
 #define MAX_DEVICES     20
 
