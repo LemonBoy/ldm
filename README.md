@@ -5,9 +5,9 @@ l(ightweight) d(evice) m(ounter)
 A lightweight daemon that mounts usb drives, cds, dvds or floppys
 automagically. Made for people that have no desktop-manager with
 all the bells and whistles but still want to enjoy automount.
-It does mount every device in /media and names them by either
-(in order) volume label, volume uuid or device serial or using the
-fstab rule for that device, if defined.
+It does mount every device in /mnt (but feel free to change the mount path
+in the source code) and names them by either (in order) volume label, 
+volume uuid or device serial or using the fstab rule for that device, if defined.
 Everything in ~30Kb of C code with libudev & libmount as only dependencies.
 
 Callbacks
