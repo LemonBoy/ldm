@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <fcntl.h>
-#include <malloc.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <limits.h>
@@ -8,9 +7,7 @@
 #include <signal.h>
 #include <syslog.h>
 #include <poll.h>
-#include <pwd.h>
 #include <libudev.h>
-#include <mntent.h>
 #include <sys/inotify.h>
 #include <sys/wait.h>
 #include <libmount/libmount.h>
