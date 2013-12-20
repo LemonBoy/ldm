@@ -1,43 +1,44 @@
-CC	?= gcc
-CFLAGS ?= -O2
-LDFLAGS += -ludev -lmount
-CFDEBUG = -g3 -pedantic -Wall -Wunused-parameter -Wlong-long\
-		  -Wsign-conversion -Wconversion -Wimplicit-function-declaration
+CC ?= gcc
+CFLAGS := -O2 $(CFLAGS)
+LDFLAGS := -ludev -lmount $(LDFLAGS)
+CFDEBUG = -g3 -pedantic -Wall -Wunused-parameter -Wlong-long
+CFDEBUG += -Wsign-conversion -Wconversion -Wimplicit-function-declaration
+
+PREFIX ?= /usr/local
+BINDIR ?= $(PREFIX)/bin
+SYSTEMDDIR ?= $(PREFIX)/lib/systemd
 
 EXEC = ldm
 SRCS = ldm.c
-OBJS = ${SRCS:.c=.o}
+OBJS = $(SRCS:.c=.o)
 
-PREFIX?=/usr
-BINDIR=${PREFIX}/bin
-SYSTEMDDIR=/usr/lib/systemd/system
-
-all: ${EXEC}
+all: $(EXEC)
 
 .c.o:
-	${CC} ${CFLAGS} -o $@ -c $<
+	$(CC) $(CFLAGS) -o $@ -c $<
 
-${EXEC}: ${OBJS}
-	${CC} ${LDFLAGS} -o ${EXEC} ${OBJS}
+$(EXEC): $(OBJS)
+	$(CC) $(LDFLAGS) -o $(EXEC) $(OBJS)
 
-debug: ${EXEC}
-debug: CC += ${CFDEBUG}
+debug: $(EXEC)
+debug: CC += $(CFDEBUG)
 
 clean:
-	rm -rf ./*.o
-	rm -rf ./ldm
+	$(RM) *.o ldm
 
 mrproper: clean
-	rm ${EXEC}
+	$(RM) $(EXEC)
 
 install-main: ldm
-	test -d ${DESTDIR}${BINDIR} || mkdir -p ${DESTDIR}${BINDIR}
-	install -m755 ldm ${DESTDIR}${BINDIR}/ldm
+	install -D -m 755 ldm $(DESTDIR)$(BINDIR)/ldm
 
 install-systemd: ldm.service
-	test -d ${DESTDIR}${SYSTEMDDIR} || mkdir -p ${DESTDIR}${SYSTEMDDIR}
-	install -m644 ldm.service ${DESTDIR}${SYSTEMDDIR}/
+	install -D -m 644 ldm.service $(DESTDIR)$(SYSTEMDDIR)/system/ldm.service
 
 install: all install-main install-systemd
 
-.PHONY: all debug clean mrproper install install-main install-systemd
+uninstall:
+	$(RM) $(DESTDIR)$(BINDIR)/ldm
+	$(RM) $(DESTDIR)$(SYSTEMDDIR)/system/ldm.service
+
+.PHONY: all debug clean mrproper install install-main install-systemd uninstall
