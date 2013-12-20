@@ -10,7 +10,6 @@ OBJS = ${SRCS:.c=.o}
 
 PREFIX?=/usr
 BINDIR=${PREFIX}/bin
-DAEMONDIR=/etc/rc.d
 SYSTEMDDIR=/usr/lib/systemd/system
 
 all: ${EXEC}
@@ -35,14 +34,10 @@ install-main: ldm
 	test -d ${DESTDIR}${BINDIR} || mkdir -p ${DESTDIR}${BINDIR}
 	install -m755 ldm ${DESTDIR}${BINDIR}/ldm
 
-install-daemon: ldm.daemon
-	test -d ${DESTDIR}${DAEMONDIR} || mkdir -p ${DESTDIR}${DAEMONDIR}
-	install -m755 ldm.daemon ${DESTDIR}${DAEMONDIR}/ldm
-
 install-systemd: ldm.service
 	test -d ${DESTDIR}${SYSTEMDDIR} || mkdir -p ${DESTDIR}${SYSTEMDDIR}
 	install -m644 ldm.service ${DESTDIR}${SYSTEMDDIR}/
 
-install: all install-main install-daemon install-systemd
+install: all install-main install-systemd
 
-.PHONY: all debug clean mrproper install install-main install-daemon install-systemd
+.PHONY: all debug clean mrproper install install-main install-systemd
