@@ -10,10 +10,11 @@
 #include <libudev.h>
 #include <sys/inotify.h>
 #include <sys/wait.h>
+#include <sys/ioctl.h>
 #include <libmount/libmount.h>
 #include <errno.h>
 
-#define VERSION_STR "0.4.2"
+#define VERSION_STR "0.4.3"
 
 enum {
     DEVICE_VOLUME,
@@ -44,6 +45,10 @@ typedef struct fs_quirk_t {
 #define CALLBACK_PATH   NULL
 #define OPT_FMT         "uid=%i,gid=%i"
 #define MAX_DEVICES     20
+#define FSTAB_PATH      "/etc/fstab"
+#define MTAB_PATH       "/proc/self/mounts"
+#define LOCK_PATH       "/run/ldm.pid"
+#define FIFO_PATH       "/run/ldm.fifo"
 
 /* Static global structs */
 
@@ -67,7 +72,7 @@ char * device_create_mountpoint(struct device_t *device);
 void device_list_clear(void);
 int device_register(struct device_t *dev);
 void device_destroy(struct device_t *dev);
-struct device_t * device_search(char *devnode);
+struct device_t * device_search(const char *devnode);
 struct device_t * device_new(struct udev_device *dev);
 int device_mount(struct udev_device *dev);
 int device_unmount(struct udev_device *dev);
@@ -89,8 +94,6 @@ s_strdup(const char *str)
 
 /* Locking functions */
 
-#define LOCK_PATH "/run/ldm.pid"
-
 int
 lock_create (int pid)
 {
@@ -111,10 +114,7 @@ lock_remove (void)
 int
 lock_exist (void)
 {
-    FILE *f = fopen(LOCK_PATH, "r");
-    if (f)
-        fclose(f);
-    return (f != NULL);
+    return (access(LOCK_PATH, F_OK) != -1);
 }
 
 /* Spawn helper */
@@ -148,14 +148,9 @@ spawn_helper (const char *helper, const char *action, char *mountpoint)
     syslog(LOG_ERR, "Could not execute \"%s\"", helper);
     /* Die */
     _Exit(1);
-
-    return 0xdeadbeef;
 }
 
 /* Convenience function for fstab handling */
-
-#define FSTAB_PATH  "/etc/fstab"
-#define MTAB_PATH   "/proc/self/mounts"
 
 struct libmnt_fs *
 fstab_search (struct libmnt_table *tab, struct udev_device *udev)
@@ -337,17 +332,20 @@ device_destroy (struct device_t *dev)
         g_devices[j] = NULL;
 }
 
+/* Path is either the /dev/ node or the mountpoint */
 struct device_t *
-device_search (char *devnode)
+device_search (const char *path)
 {
     int j;
 
-    if (!devnode)
+    if (!path)
         return NULL;
 
     for (j = 0; j < MAX_DEVICES; j++) {
-        if (g_devices[j] && !strcmp(g_devices[j]->devnode, devnode))
-            return g_devices[j];
+        if (g_devices[j]) {
+            if (!strcmp(g_devices[j]->devnode, path) || !strcmp(g_devices[j]->mountpoint, path))
+                return g_devices[j];
+        }
     }
 
     return NULL;
@@ -420,11 +418,9 @@ device_new (struct udev_device *dev)
         return NULL;
     }
 
-    if (fstab_entry) {
-        device->mountpoint = s_strdup(mnt_fs_get_target(fstab_entry));
-    } else {
-        device->mountpoint = device_create_mountpoint(device);
-    }
+    device->mountpoint = (fstab_entry) ? 
+        s_strdup(mnt_fs_get_target(fstab_entry)) : 
+        device_create_mountpoint(device);
 
     if (!device->mountpoint) {
         syslog(LOG_ERR, "Couldn't make up a mountpoint name. Please report this bug.");
@@ -556,6 +552,27 @@ device_change (struct udev_device *dev)
 }
 
 void
+handle_ipc_event (int ipcfd, char *msg)
+{
+    struct device_t *device;
+
+    /* Keep it simple */
+    switch (msg[0]) {
+        case 'R': /* R for Remove */
+            /* Strip the trailing slash. Brutally. */
+            if (msg[strlen(msg) - 1] == '/')
+                msg[strlen(msg) - 1] = '\0';
+
+            device = device_search(msg + 1);
+
+            if (device && device_is_mounted(device->udev))
+                device_unmount(device->udev);
+
+            break;
+    }
+}
+
+void
 check_registered_devices (void)
 {
     int j;
@@ -617,14 +634,14 @@ daemonize (void)
     }
 
     if (chdir("/") < 0) {
-        fprintf(stderr, "chdir() failed\n");
+        perror("chdir");
         return 0;
     }
 
     umask(022);
 
     if (setsid() < 0) {
-        fprintf(stderr, "setsid() failed\n");
+        perror("setsid");
         return 0;
     }
 
@@ -645,9 +662,25 @@ force_reload_table (struct libmnt_table **table, const char *path)
     *table = mnt_new_table_from_file(path);
 
     if (!*table)
-        syslog(LOG_ERR, "Error while parsing "FSTAB_PATH);
+        syslog(LOG_ERR, "Error while parsing %s", path);
 
     return (*table != NULL);
+}
+
+int
+fifo_open (int oldfd, const int mode)
+{
+    int fd;
+
+    if (oldfd)
+        close(oldfd);
+
+    if ((fd = open(FIFO_PATH, mode)) < 0) {
+        perror("open");
+        return -1;
+    }
+
+    return fd;
 }
 
 int
@@ -657,40 +690,31 @@ main (int argc, char *argv[])
     struct udev_monitor *monitor;
     struct udev_device  *device;
     const  char         *action;
-    struct pollfd        pollfd[3];  /* udev / inotify watch / mtab */
+    struct pollfd        pollfd[4];  /* udev / inotify watch / mtab / fifo */
     int                  opt;
     int                  daemon;
     int                  notifyfd;
-    int                  fswatch;
+    int                  watchd;
+    int                  ipcfd;
     struct inotify_event event;
-
-    printf("ldm "VERSION_STR"\n");
-    printf("2011-2013 (C) The Lemon Man\n");
-
-    if (getuid() != 0) {
-        printf("You have to run this program as root!\n");
-        return 1;
-    }
-
-    if (lock_exist()) {
-        printf("ldm is already running!\n");
-        return 0;
-    }
-
-    notifyfd = inotify_init();
-
-    if (notifyfd < 0) {
-        printf("Could not initialize inotify\n");
-        return 0;
-    }
 
     daemon  =  0;
     g_uid   = -1;
     g_gid   = -1;
-    fswatch = -1;
 
-    while ((opt = getopt(argc, argv, "dg:u:")) != -1) {
+    while ((opt = getopt(argc, argv, "hdg:u:r:")) != -1) {
         switch (opt) {
+            case 'r':
+                ipcfd = fifo_open(-1, O_WRONLY);
+                /* Could not open the pipe */
+                if (ipcfd < 0)
+                    return EXIT_FAILURE;
+
+                write(ipcfd, "R", 1);
+                write(ipcfd, optarg, strlen(optarg));
+                close(ipcfd);
+                
+                return EXIT_SUCCESS;
             case 'd':
                 daemon = 1;
                 break;
@@ -700,22 +724,63 @@ main (int argc, char *argv[])
             case 'u':
                 g_uid = (int)strtoul(optarg, NULL, 10);
                 break;
+            case 'h':
+                printf("ldm "VERSION_STR"\n");
+                printf("2011-2014 (C) The Lemon Man\n");
+                printf("%s [-d | -r | -g | -u | -h]\n", argv[0]);
+                printf("\t-d Run ldm as a daemon\n");
+                printf("\t-r Removes a mounted device\n");
+                printf("\t-g Specify the gid\n");
+                printf("\t-u Specify the gid\n");
+                printf("\t-h Show this help\n");
+                /* Falltrough */
             default:
-                return 1;
+                return EXIT_SUCCESS;
         }
     }
 
     if (g_uid < 0 || g_gid < 0) {
         printf("You must supply your gid/uid!\n");
-        return 1;
+        return EXIT_FAILURE;
+    }
+
+    if (getuid() != 0) {
+        printf("You have to run this program as root!\n");
+        return EXIT_FAILURE;
+    }
+
+    if (lock_exist()) {
+        printf("ldm is already running!\n");
+        return EXIT_SUCCESS;
+    }
+
+    notifyfd = inotify_init();
+
+    if (notifyfd < 0) {
+        perror("inotify_init");
+        return EXIT_FAILURE;
+    }
+
+    /* Create the ipc socket */
+    unlink(FIFO_PATH);
+    umask(0);
+
+    if (mkfifo(FIFO_PATH, 0666) < 0) {
+        perror("mkfifo");
+        return EXIT_FAILURE;
+    }
+
+    ipcfd = fifo_open(-1, O_RDONLY | O_NONBLOCK);
+
+    if (ipcfd < 0)
+        return EXIT_FAILURE;
+
+    if (daemon && !daemonize()) {
+        printf("Could not spawn the daemon!\n");
+        return EXIT_FAILURE;
     }
 
     openlog("ldm", LOG_CONS, LOG_DAEMON);
-
-    if (daemon && !daemonize()) {
-        printf("Could not spawn the daemon...\n");
-        return 1;
-    }
 
     signal(SIGTERM, sig_handler);
     signal(SIGINT , sig_handler);
@@ -756,22 +821,24 @@ main (int argc, char *argv[])
     if (!force_reload_table(&g_fstab, FSTAB_PATH) || !force_reload_table(&g_mtab, MTAB_PATH))
         goto cleanup;
     
-    fswatch = inotify_add_watch(notifyfd, FSTAB_PATH, IN_CLOSE_WRITE);
+    watchd = inotify_add_watch(notifyfd, FSTAB_PATH, IN_CLOSE_WRITE);
 
     /* Register all the events */
     pollfd[0].fd = udev_monitor_get_fd(monitor);
     pollfd[0].events = POLLIN;
     pollfd[1].fd = notifyfd;
     pollfd[1].events = POLLIN;
-    pollfd[2].fd = open(MTAB_PATH, O_RDONLY);
+    pollfd[2].fd = open(MTAB_PATH, O_RDONLY | O_NONBLOCK);
     pollfd[2].events = POLLERR;
+    pollfd[3].fd = ipcfd;
+    pollfd[3].events = POLLIN;
 
     syslog(LOG_INFO, "Entering the main loop");
 
     g_running = 1;
 
     while (g_running) {
-        if (poll(pollfd, 3, -1) < 1)
+        if (poll(pollfd, 4, -1) < 1)
             continue;
 
         /* Incoming message on udev socket */
@@ -797,23 +864,46 @@ main (int argc, char *argv[])
             read(pollfd[1].fd, &event, sizeof(struct inotify_event)); 
 
             if (!force_reload_table(&g_fstab, FSTAB_PATH))
-                goto cleanup;
+                break;
         }
         /* mtab change */
         if (pollfd[2].revents & POLLERR) {
             if (!force_reload_table(&g_mtab, MTAB_PATH))
-                goto cleanup;
+                break;
             check_registered_devices();
+        }
+        /* ipc message on the fifo */
+        if (pollfd[3].revents & POLLIN) {
+            int msg_len;
+            /* Get the exact message length */
+            if (ioctl(ipcfd, FIONREAD, &msg_len) < 0) {
+                perror("ioctl");
+                break;
+            }
+
+            char msg[msg_len];
+            if (read(ipcfd, msg, msg_len) != msg_len) {
+                perror("read");
+                break;
+            }
+            msg[msg_len] = '\0';
+
+            handle_ipc_event(ipcfd, msg);
+
+            /* The fifo is closed once the other end finishes sending the data so just reopen it. */
+            pollfd[3].fd = ipcfd = fifo_open(ipcfd, O_RDONLY | O_NONBLOCK);
         }
     }
 
 cleanup:
     /* Do the cleanup */
-    if (fswatch > 0)
-        inotify_rm_watch(notifyfd, fswatch);
+    inotify_rm_watch(notifyfd, watchd);
 
+    close(ipcfd);
     close(notifyfd);
     close(pollfd[2].fd);
+
+    unlink(FIFO_PATH);
 
     device_list_clear();
 
@@ -823,8 +913,8 @@ cleanup:
     mnt_free_table(g_fstab);
     mnt_free_table(g_mtab);
 
-    syslog(LOG_INFO,  "Terminating...");
+    syslog(LOG_INFO, "Terminating...");
     lock_remove();
 
-    return 0;
+    return EXIT_SUCCESS;
 }
