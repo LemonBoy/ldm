@@ -181,8 +181,7 @@ fstab_search (struct libmnt_table *tab, struct udev_device *udev)
     tmp = udev_device_get_property_value(udev, "ID_FS_UUID");
     if (!tmp)
         return NULL;
-    strcpy(keyword, "UUID=");
-    strcat(keyword, tmp);
+    snprintf(keyword, sizeof(keyword), "UUID=%s", tmp);
     ret = mnt_table_find_source(tab, keyword, MNT_ITER_FORWARD);
     if (ret) 
         return ret;
@@ -191,8 +190,7 @@ fstab_search (struct libmnt_table *tab, struct udev_device *udev)
     tmp = udev_device_get_property_value(udev, "ID_FS_LABEL");
     if (!tmp)
         return NULL;
-    strcpy(keyword, "LABEL=");
-    strcat(keyword, tmp);
+    snprintf(keyword, sizeof(keyword), "LABEL=%s", tmp);
     ret = mnt_table_find_source(tab, keyword, MNT_ITER_FORWARD);
     if (ret) 
         return ret;
