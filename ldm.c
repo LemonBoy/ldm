@@ -25,7 +25,9 @@ enum {
 enum {
     QUIRK_NONE = 0,
     QUIRK_OWNER_FIX = (1<<0),
-    QUIRK_UTF8_FLAG = (1<<1)
+    QUIRK_UTF8_FLAG = (1<<1),
+    QUIRK_MASK = (1<<2),
+    QUIRK_FLUSH = (1<<3)
 };
 
 typedef struct device_t  {
@@ -229,8 +231,8 @@ filesystem_quirks (char *fs)
     static const fs_quirk_t fs_table [] = {
         { "msdos" , QUIRK_OWNER_FIX | QUIRK_UTF8_FLAG },
         { "umsdos", QUIRK_OWNER_FIX | QUIRK_UTF8_FLAG },
-        { "vfat",   QUIRK_OWNER_FIX | QUIRK_UTF8_FLAG },
-        { "exfat",  QUIRK_OWNER_FIX | QUIRK_UTF8_FLAG },
+        { "vfat",   QUIRK_OWNER_FIX | QUIRK_UTF8_FLAG | QUIRK_MASK | QUIRK_FLUSH },
+        { "exfat",  QUIRK_OWNER_FIX },
         { "ntfs",   QUIRK_OWNER_FIX | QUIRK_UTF8_FLAG },
         { "iso9660",QUIRK_OWNER_FIX | QUIRK_UTF8_FLAG },
         { "udf",    QUIRK_OWNER_FIX },
@@ -466,6 +468,10 @@ device_mount (struct udev_device *dev)
             p += sprintf(p, OPT_FMT",", g_uid, g_gid);
         if (quirks & QUIRK_UTF8_FLAG)
             p += sprintf(p, "utf8,");
+        if (quirks & QUIRK_FLUSH)
+            p += sprintf(p, "flush,");
+        if (quirks & QUIRK_MASK)
+            p += sprintf(p, "dmask=000,fmask=111,");
     }
     *p = 0;
 
