@@ -43,8 +43,6 @@ typedef struct fs_quirk_t {
     int quirks;
 } fs_quirk_t;
 
-#define MOUNT_PATH      "/mnt/"
-#define CALLBACK_PATH   NULL
 #define OPT_FMT         "uid=%i,gid=%i"
 #define MAX_DEVICES     20
 #define FSTAB_PATH      "/etc/fstab"
@@ -54,13 +52,14 @@ typedef struct fs_quirk_t {
 
 /* Static global structs */
 
-static struct libmnt_table     *g_fstab;
-static struct libmnt_table     *g_mtab;
-static struct device_t         *g_devices[MAX_DEVICES];
-static FILE                    *g_lockfd;
-static int                      g_running;
-static int                      g_uid;
-static int                      g_gid;
+static struct libmnt_table *g_fstab;
+static struct libmnt_table *g_mtab;
+static struct device_t *g_devices[MAX_DEVICES];
+static FILE *g_lockfd;
+static int g_running;
+static int g_gid, g_uid;
+static char *g_mount_path;
+static char *g_callback_path;
 
 /* Functions declaration */
 char * xstrdup(const char *str);
@@ -269,11 +268,11 @@ device_create_mountpoint (struct device_t *device)
     serial = udev_device_get_property_value(device->udev, "ID_SERIAL");
 
     if (label)
-        snprintf(tmp, sizeof(tmp), "%s%s", MOUNT_PATH, label);
+        snprintf(tmp, sizeof(tmp), "%s/%s", g_mount_path, label);
     else if (uuid)
-        snprintf(tmp, sizeof(tmp), "%s%s", MOUNT_PATH, uuid);
+        snprintf(tmp, sizeof(tmp), "%s/%s", g_mount_path, uuid);
     else if (serial)
-        snprintf(tmp, sizeof(tmp), "%s%s", MOUNT_PATH, serial);
+        snprintf(tmp, sizeof(tmp), "%s/%s", g_mount_path, serial);
     else
         return NULL;
 
@@ -510,7 +509,7 @@ device_mount (struct udev_device *dev)
         }
     }
 
-    spawn_helper(CALLBACK_PATH, "mount", device->mountpoint);
+    spawn_helper(g_callback_path, "mount", device->mountpoint);
 
     return 1;
 }
@@ -539,7 +538,7 @@ device_unmount (struct udev_device *dev)
 
     rmdir(device->mountpoint);
 
-    spawn_helper(CALLBACK_PATH, "unmount", device->mountpoint);
+    spawn_helper(g_callback_path, "unmount", device->mountpoint);
 
     device_destroy(device);
 
@@ -573,6 +572,9 @@ device_change (struct udev_device *dev)
     return 1;
 }
 
+/* Strip the trailing slash. Brutally. */
+#define strip_slash(s) do { int l = strlen(s); if (l && s[l-1] == '/') s[l-1] = '\0'; } while(0)
+
 void
 handle_ipc_event (int ipcfd, char *msg)
 {
@@ -581,9 +583,7 @@ handle_ipc_event (int ipcfd, char *msg)
     /* Keep it simple */
     switch (msg[0]) {
         case 'R': /* R for Remove */
-            /* Strip the trailing slash. Brutally. */
-            if (msg[strlen(msg) - 1] == '/')
-                msg[strlen(msg) - 1] = '\0';
+            strip_slash(msg);
 
             device = device_search(msg + 1);
 
@@ -684,6 +684,17 @@ daemonize (void)
 }
 
 int
+isdir (const char *path)
+{
+    struct stat st;
+
+    if (stat(path, &st) < 0) 
+        return 0;
+
+    return S_ISDIR(st.st_mode);
+}
+
+int
 fifo_open (int oldfd, const int mode)
 {
     int fd;
@@ -718,7 +729,7 @@ main (int argc, char *argv[])
     g_uid   = -1;
     g_gid   = -1;
 
-    while ((opt = getopt(argc, argv, "hdg:u:r:")) != -1) {
+    while ((opt = getopt(argc, argv, "hdg:u:r:p:c:")) != -1) {
         switch (opt) {
             case 'r':
                 ipcfd = fifo_open(-1, O_WRONLY);
@@ -740,14 +751,24 @@ main (int argc, char *argv[])
             case 'u':
                 g_uid = (int)strtoul(optarg, NULL, 10);
                 break;
+            case 'p':
+                g_mount_path = xstrdup(optarg);
+                break;
+            case 'c':
+                if (access(optarg, F_OK | X_OK) < 0)
+                    fprintf(stderr, "Callback script not found or not executable\n");
+                else
+                    g_callback_path = xstrdup(optarg);
             case 'h':
                 printf("ldm "VERSION_STR"\n");
                 printf("2011-2014 (C) The Lemon Man\n");
-                printf("%s [-d | -r | -g | -u | -h]\n", argv[0]);
+                printf("%s [-d | -r | -g | -u | -p | -c | -h]\n", argv[0]);
                 printf("\t-d Run ldm as a daemon\n");
                 printf("\t-r Removes a mounted device\n");
                 printf("\t-g Specify the gid\n");
                 printf("\t-u Specify the gid\n");
+                printf("\t-p Specify where to mount the devices\n");
+                printf("\t-c Specify the path to the script executed after mount/unmount events\n");
                 printf("\t-h Show this help\n");
                 /* Falltrough */
             default:
@@ -756,17 +777,34 @@ main (int argc, char *argv[])
     }
 
     if (g_uid < 0 || g_gid < 0) {
-        printf("You must supply your gid/uid!\n");
+        fprintf(stderr, "You must supply your gid/uid!\n");
         return EXIT_FAILURE;
     }
 
+    /* A not-so-safe default */
+    if (!g_mount_path)
+        g_mount_path = xstrdup("/mnt");
+
+    /* Check anyways */
+    if (!isdir(g_mount_path)) {
+        fprintf(stderr, "The path %s doesn't name a folder or doesn't exist!\n", g_mount_path);
+
+        free(g_callback_path);
+        free(g_mount_path);
+
+        return EXIT_FAILURE;
+    }
+
+    /* Sanitize before use */
+    strip_slash(g_mount_path);
+
     if (getuid() != 0) {
-        printf("You have to run this program as root!\n");
+        fprintf(stderr, "You have to run this program as root!\n");
         return EXIT_FAILURE;
     }
 
     if (lock_exist()) {
-        printf("ldm is already running!\n");
+        fprintf(stderr, "ldm is already running!\n");
         return EXIT_SUCCESS;
     }
 
@@ -792,7 +830,7 @@ main (int argc, char *argv[])
         return EXIT_FAILURE;
 
     if (daemon && !daemonize()) {
-        printf("Could not spawn the daemon!\n");
+        fprintf(stderr, "Could not spawn the daemon!\n");
         return EXIT_FAILURE;
     }
 
@@ -921,6 +959,9 @@ main (int argc, char *argv[])
     }
 
 cleanup:
+    free(g_callback_path);
+    free(g_mount_path);
+
     /* Do the cleanup */
     inotify_rm_watch(notifyfd, watchd);
 
