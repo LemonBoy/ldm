@@ -31,11 +31,11 @@ enum {
 };
 
 typedef struct device_t  {
-    int                  type;
-    char                *filesystem;
-    char                *devnode;
-    char                *mountpoint;
-    struct udev_device  *udev;
+    int kind;
+    char *filesystem;
+    char *devnode;
+    char *mountpoint;
+    struct udev_device *udev;
 } device_t;
 
 typedef struct fs_quirk_t {
@@ -63,12 +63,13 @@ static int                      g_uid;
 static int                      g_gid;
 
 /* Functions declaration */
-char * s_strdup(const char *str);
+char * xstrdup(const char *str);
+int xstrcmp (const char *s1, const char *s2);
 int lock_create(int pid);
 int lock_remove(void);
 int lock_exist(void);
 struct libmnt_fs * fstab_search (struct libmnt_table *tab, struct udev_device *device);
-int device_has_media(struct device_t *device);
+int device_has_media (struct udev_device *udev, const int dev_type);
 int filesystem_needs_id_fix(char *fs);
 char * device_create_mountpoint(struct device_t *device);
 void device_list_clear(void);
@@ -83,14 +84,24 @@ void mount_plugged_devices(struct udev *udev);
 void sig_handler(int signal);
 int daemonize(void);
 
-/* A less stupid s_strdup */
+/* A less stupid strdup */
 
 char *
-s_strdup(const char *str)
+xstrdup(const char *str)
 {
     if (!str)
         return NULL;
     return (char *)strdup(str);
+}
+
+/* A less stupid strcmp */
+
+int
+xstrcmp (const char *s1, const char *s2)
+{
+    if (!s1 || !s2)
+        return 1;
+    return strcmp(s1, s2);
 }
 
 /* Locking functions */
@@ -165,15 +176,15 @@ fstab_search (struct libmnt_table *tab, struct udev_device *udev)
     /* Is it a logical volume */
     if (strncmp(tmp, "/dev/dm-", 8)) {
         ret = mnt_table_find_source(tab, tmp, MNT_ITER_FORWARD);
-        if (ret) 
+        if (ret)
             return ret;
     } else {
         struct udev_list_entry *list_entry;
-        
+
         /* Walk all the symbolic links pointing to this volume */
         udev_list_entry_foreach(list_entry, udev_device_get_devlinks_list_entry(udev)) {
             ret = mnt_table_find_source(tab, udev_list_entry_get_name(list_entry), MNT_ITER_FORWARD);
-            if (ret) 
+            if (ret)
                 return ret;
         }
     }
@@ -184,7 +195,7 @@ fstab_search (struct libmnt_table *tab, struct udev_device *udev)
         return NULL;
     snprintf(keyword, sizeof(keyword), "UUID=%s", tmp);
     ret = mnt_table_find_source(tab, keyword, MNT_ITER_FORWARD);
-    if (ret) 
+    if (ret)
         return ret;
 
     /* Try matching the label */
@@ -193,7 +204,7 @@ fstab_search (struct libmnt_table *tab, struct udev_device *udev)
         return NULL;
     snprintf(keyword, sizeof(keyword), "LABEL=%s", tmp);
     ret = mnt_table_find_source(tab, keyword, MNT_ITER_FORWARD);
-    if (ret) 
+    if (ret)
         return ret;
 
     return NULL;
@@ -211,18 +222,19 @@ fstab_has_option (struct libmnt_table *tab, struct udev_device *udev, const char
     return mnt_fs_match_options(ret, option);
 }
 
-int 
-device_has_media (struct device_t *device) 
+int
+device_has_media (struct udev_device *udev, const int dev_type)
 {
-    if (!device)
+    if (!udev)
         return 0;
-    switch (device->type) {
+
+    switch (dev_type) {
         case DEVICE_VOLUME:
-            return (udev_device_get_property_value(device->udev, "ID_FS_USAGE") != NULL);
+            return (udev_device_get_property_value(udev, "ID_FS_USAGE") != NULL);
         case DEVICE_CD:
-            return (udev_device_get_property_value(device->udev, "ID_CDROM_MEDIA") != NULL);
-	default:
-	    return 0;
+            return (udev_device_get_property_value(udev, "ID_CDROM_MEDIA") != NULL);
+        default:
+            return 0;
     }
 }
 
@@ -241,10 +253,10 @@ filesystem_quirks (char *fs)
     };
 
     for (i = 0; i < sizeof(fs_table)/sizeof(fs_quirk_t); i++) {
-        if (!strcmp(fs_table[i].name, fs))
+        if (!xstrcmp(fs_table[i].name, fs))
             return fs_table[i].quirks;
     }
-    return QUIRK_NONE;    
+    return QUIRK_NONE;
 }
 
 char *
@@ -277,16 +289,16 @@ device_create_mountpoint (struct device_t *device)
     /* Check if there's another folder with the same name */
     while (!stat(tmp, &st)) {
         /* We tried hard and failed */
-        if (strlen(tmp) == sizeof(tmp) - 2) 
+        if (strlen(tmp) == sizeof(tmp) - 2)
             return NULL;
         /* Append a trailing _ */
         strcat(tmp, "_");
     }
 
-    return s_strdup(tmp);
+    return xstrdup(tmp);
 }
 
-void 
+void
 device_list_clear (void)
 {
     int j;
@@ -347,7 +359,7 @@ device_search (const char *path)
 
     for (j = 0; j < MAX_DEVICES; j++) {
         if (g_devices[j]) {
-            if (!strcmp(g_devices[j]->devnode, path) || !strcmp(g_devices[j]->mountpoint, path))
+            if (!xstrcmp(g_devices[j]->devnode, path) || !xstrcmp(g_devices[j]->mountpoint, path))
                 return g_devices[j];
         }
     }
@@ -370,9 +382,38 @@ device_new (struct udev_device *dev)
 
     const char *dev_type;
     const char *dev_idtype;
-   
+    char *dev_node;
+    char *dev_fs;
+    int dev_kind;
+
     /* First of all check wether we're dealing with a noauto device */
-    if (fstab_has_option(g_fstab, dev, "+noauto")) 
+    if (fstab_has_option(g_fstab, dev, "+noauto"))
+        return NULL;
+
+    dev_node = xstrdup(udev_device_get_devnode(dev));
+    dev_fs   = xstrdup(udev_device_get_property_value(dev, "ID_FS_TYPE"));
+
+    dev_type   = udev_device_get_devtype(dev);
+    dev_idtype = udev_device_get_property_value(dev, "ID_TYPE");
+
+    /* Avoid mounting swap partitions because we're not intrested in those and LVM/LUKS
+     * containers as udev issues another event for each single partition contained in them */
+    if (!xstrcmp(dev_fs, "swap") || !xstrcmp(dev_fs, "LVM2_member") || !xstrcmp(dev_fs, "crypto_LUKS"))
+        return NULL;
+
+    if (!xstrcmp(dev_type, "partition") && !xstrcmp(dev_idtype, "disk"))
+        dev_kind = DEVICE_VOLUME;
+    /* LVM partitions */
+    else if (udev_device_get_property_value(dev, "DM_NAME") && !xstrcmp(dev_type, "disk"))
+        dev_kind = DEVICE_VOLUME;
+    else if (!xstrcmp(dev_idtype, "floppy"))
+        dev_kind = DEVICE_VOLUME;
+    else if (!xstrcmp(dev_idtype, "cd"))
+        dev_kind = DEVICE_CD;
+    else
+        return NULL;
+
+    if (!device_has_media(dev, dev_kind))
         return NULL;
 
     device = calloc(1, sizeof(struct device_t));
@@ -381,49 +422,17 @@ device_new (struct udev_device *dev)
         return NULL;
 
     device->udev = dev;
+    device->kind = dev_kind;
+    device->devnode = dev_node;
+    device->filesystem = dev_fs;
+
+    /* Increment the refcount */
     udev_device_ref(device->udev);
-
-    device->devnode = s_strdup(udev_device_get_devnode(dev));
-    device->filesystem = s_strdup(udev_device_get_property_value(dev, "ID_FS_TYPE"));
-
-    dev_type    = udev_device_get_devtype(dev);
-    dev_idtype  = udev_device_get_property_value(dev, "ID_TYPE");
-
-    device->type = DEVICE_UNK;
-
-    /* Avoid mounting swap partitions because we're not intrested in those and LVM/LUKS 
-     * containers as udev issues another event for each single partition contained in them */
-    if (!device->filesystem || 
-        !strcmp(device->filesystem, "swap") || 
-        !strcmp(device->filesystem, "LVM2_member") || 
-        !strcmp(device->filesystem, "crypto_LUKS")) { 
-        device_destroy(device);
-        return NULL;
-    }
-
-    if ((!strcmp(dev_type, "partition") && !strcmp(dev_idtype, "disk")) || 
-        !strcmp(dev_idtype, "floppy"))  {
-        device->type = DEVICE_VOLUME;
-    } 
-        
-    if (dev_idtype && !strcmp(dev_idtype, "cd")) 
-        device->type = DEVICE_CD;
-
-    if (device->type == DEVICE_UNK) {
-        device_destroy(device);
-        return NULL;
-    }
 
     fstab_entry = fstab_search(g_fstab, device->udev);
 
-    if (!device_has_media(device)) {
-        device_destroy(device);
-
-        return NULL;
-    }
-
-    device->mountpoint = (fstab_entry) ? 
-        s_strdup(mnt_fs_get_target(fstab_entry)) : 
+    device->mountpoint = (fstab_entry) ?
+        xstrdup(mnt_fs_get_target(fstab_entry)) :
         device_create_mountpoint(device);
 
     if (!device->mountpoint) {
@@ -448,7 +457,7 @@ device_mount (struct udev_device *dev)
     char opt_fmt[256];
     char *p;
     int quirks;
- 
+
     device = device_new(dev);
 
     if (!device)
@@ -462,9 +471,9 @@ device_mount (struct udev_device *dev)
     quirks = filesystem_quirks(device->filesystem);
 
     if (quirks != QUIRK_NONE) {
-        /* Microsoft filesystems and filesystems used on optical 
-         * discs require the gid and uid to be passed as mount 
-         * arguments to allow the user to read and write, while 
+        /* Microsoft filesystems and filesystems used on optical
+         * discs require the gid and uid to be passed as mount
+         * arguments to allow the user to read and write, while
          * posix filesystems just need a chown after being mounted */
         if (quirks & QUIRK_OWNER_FIX)
             p += sprintf(p, OPT_FMT",", g_uid, g_gid);
@@ -484,7 +493,7 @@ device_mount (struct udev_device *dev)
     mnt_context_set_target(ctx, device->mountpoint);
     mnt_context_set_options(ctx, opt_fmt);
 
-    if (device->type == DEVICE_CD) 
+    if (device->kind == DEVICE_CD)
         mnt_context_set_mflags(ctx, MS_RDONLY);
 
     if (mnt_context_mount(ctx)) {
@@ -517,7 +526,7 @@ device_unmount (struct udev_device *dev)
 
     device = device_search((char *)udev_device_get_devnode(dev));
 
-    if (!device) 
+    if (!device)
         return 0;
 
     if (device_is_mounted(dev)) {
@@ -536,11 +545,11 @@ device_unmount (struct udev_device *dev)
     spawn_helper(CALLBACK_PATH, "unmount", device->mountpoint);
 
     device_destroy(device);
-    
+
     return 1;
 }
 
-int 
+int
 device_change (struct udev_device *dev)
 {
     struct device_t *device;
@@ -551,16 +560,16 @@ device_change (struct udev_device *dev)
     id_type = udev_device_get_property_value(dev, "ID_TYPE");
 
     /* Handle change events for CD drives only */
-    if (!id_type || strcmp(id_type, "cd"))
+    if (xstrcmp(id_type, "cd"))
         return 0;
 
     if (device) {
         /* Unmount the old media */
-        if (device_is_mounted(dev) && !device_unmount(dev)) 
+        if (device_is_mounted(dev) && !device_unmount(dev))
             return 0;
     }
 
-    /* ...and mount the new one if present */    
+    /* ...and mount the new one if present */
     if (!device_mount(dev))
         return 0;
 
@@ -603,7 +612,7 @@ check_registered_devices (void)
 
 void
 mount_plugged_devices (struct udev *udev)
-{    
+{
     const char *path;
     struct udev_enumerate *udev_enum;
     struct udev_list_entry *devices;
@@ -723,7 +732,7 @@ main (int argc, char *argv[])
                 write(ipcfd, "R", 1);
                 write(ipcfd, optarg, strlen(optarg));
                 close(ipcfd);
-                
+
                 return EXIT_SUCCESS;
             case 'd':
                 daemon = 1;
@@ -798,7 +807,7 @@ main (int argc, char *argv[])
 
     syslog(LOG_INFO, "ldm "VERSION_STR);
     syslog(LOG_INFO, "Starting up...");
- 
+
     /* Create the udev struct/monitor */
     udev = udev_new();
     monitor = udev_monitor_new_from_netlink(udev, "udev");
@@ -808,13 +817,13 @@ main (int argc, char *argv[])
         goto cleanup;
     }
     if (udev_monitor_enable_receiving(monitor)) {
-        syslog(LOG_ERR, "Cannot enable receiving");   
+        syslog(LOG_ERR, "Cannot enable receiving");
         goto cleanup;
     }
     if (udev_monitor_filter_add_match_subsystem_devtype(monitor, "block", NULL)) {
         syslog(LOG_ERR, "Cannot set the filter");
         goto cleanup;
-    }    
+    }
 
     /* Clear the devices array */
     device_list_clear();
@@ -864,27 +873,27 @@ main (int argc, char *argv[])
             if (!device)
                 continue;
 
-            action = udev_device_get_action(device);    
+            action = udev_device_get_action(device);
 
-            if (!strcmp(action, "add"))
+            if (!xstrcmp(action, "add"))
                 device_mount(device);
-            else if (!strcmp(action, "remove"))
+            else if (!xstrcmp(action, "remove"))
                 device_unmount(device);
-            else if (!strcmp(action, "change"))
+            else if (!xstrcmp(action, "change"))
                 device_change(device);
 
             udev_device_unref(device);
         }
         /* Incoming message on inotify socket */
         if (pollfd[1].revents & POLLIN) {
-            read(pollfd[1].fd, &event, sizeof(struct inotify_event)); 
+            read(pollfd[1].fd, &event, sizeof(struct inotify_event));
 
             if (mnt_table_parse_fstab(g_fstab, NULL) < 0)
                 break;
         }
         /* mtab change */
         if (pollfd[2].revents & POLLERR) {
-            read(pollfd[2].fd, &event, sizeof(struct inotify_event)); 
+            read(pollfd[2].fd, &event, sizeof(struct inotify_event));
 
             if (!(g_mtab = update_mnt_table(MTAB_PATH, g_mtab)))
                 break;
