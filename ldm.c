@@ -79,7 +79,6 @@ struct device_t * device_new(struct udev_device *dev);
 int device_mount(struct udev_device *dev);
 int device_unmount(struct udev_device *dev);
 int device_change(struct udev_device *dev);
-int force_reload_table (struct libmnt_table **table, const char *path);
 void mount_plugged_devices(struct udev *udev);
 void sig_handler(int signal);
 int daemonize(void);
@@ -402,8 +401,7 @@ device_new (struct udev_device *dev)
         return NULL;
     }
 
-    if (!strcmp(dev_type,   "partition")|| 
-        !strcmp(dev_type,   "disk")     || 
+    if ((!strcmp(dev_type, "partition") && !strcmp(dev_idtype, "disk")) || 
         !strcmp(dev_idtype, "floppy"))  {
         device->type = DEVICE_VOLUME;
     } 
@@ -420,6 +418,7 @@ device_new (struct udev_device *dev)
 
     if (!device_has_media(device)) {
         device_destroy(device);
+
         return NULL;
     }
 
@@ -545,14 +544,22 @@ int
 device_change (struct udev_device *dev)
 {
     struct device_t *device;
+    const char *id_type;
 
     device = device_search((char *)udev_device_get_devnode(dev));
 
-    /* Unmount the old media... */
+    id_type = udev_device_get_property_value(dev, "ID_TYPE");
+
+    /* Handle change events for CD drives only */
+    if (!id_type || strcmp(id_type, "cd"))
+        return 0;
+
     if (device) {
+        /* Unmount the old media */
         if (device_is_mounted(dev) && !device_unmount(dev)) 
             return 0;
     }
+
     /* ...and mount the new one if present */    
     if (!device_mount(dev))
         return 0;
@@ -619,6 +626,14 @@ mount_plugged_devices (struct udev *udev)
     udev_enumerate_unref(udev_enum);
 }
 
+struct libmnt_table *
+update_mnt_table (const char *path, struct libmnt_table *old)
+{
+    if (old)
+        mnt_free_table(old);
+    return mnt_new_table_from_file(path);
+}
+
 void
 sig_handler (int signal)
 {
@@ -660,20 +675,6 @@ daemonize (void)
     close(2);
 
     return 1;
-}
-
-int 
-force_reload_table (struct libmnt_table **table, const char *path)
-{
-    if (table && *table)
-        mnt_free_table(*table);
-
-    *table = mnt_new_table_from_file(path);
-
-    if (!*table)
-        syslog(LOG_ERR, "Error while parsing %s", path);
-
-    return (*table != NULL);
 }
 
 int
@@ -822,14 +823,20 @@ main (int argc, char *argv[])
     g_mtab  = NULL;
 
     /* The loop isn't active at this time so just do it by hand */
-    if (!force_reload_table(&g_fstab, FSTAB_PATH) || !force_reload_table(&g_mtab, MTAB_PATH))
+    if (!(g_fstab = update_mnt_table(FSTAB_PATH, g_fstab)))
+        goto cleanup;
+
+    if (!(g_mtab = update_mnt_table(MTAB_PATH, g_mtab)))
         goto cleanup;
 
     mount_plugged_devices(udev);
 
-    if (!force_reload_table(&g_fstab, FSTAB_PATH) || !force_reload_table(&g_mtab, MTAB_PATH))
+    if (!(g_fstab = update_mnt_table(FSTAB_PATH, g_fstab)))
         goto cleanup;
-    
+
+    if (!(g_mtab = update_mnt_table(MTAB_PATH, g_mtab)))
+        goto cleanup;
+
     watchd = inotify_add_watch(notifyfd, FSTAB_PATH, IN_CLOSE_WRITE);
 
     /* Register all the events */
@@ -872,13 +879,16 @@ main (int argc, char *argv[])
         if (pollfd[1].revents & POLLIN) {
             read(pollfd[1].fd, &event, sizeof(struct inotify_event)); 
 
-            if (!force_reload_table(&g_fstab, FSTAB_PATH))
+            if (mnt_table_parse_fstab(g_fstab, NULL) < 0)
                 break;
         }
         /* mtab change */
         if (pollfd[2].revents & POLLERR) {
-            if (!force_reload_table(&g_mtab, MTAB_PATH))
+            read(pollfd[2].fd, &event, sizeof(struct inotify_event)); 
+
+            if (!(g_mtab = update_mnt_table(MTAB_PATH, g_mtab)))
                 break;
+
             check_registered_devices();
         }
         /* ipc message on the fifo */
@@ -886,13 +896,13 @@ main (int argc, char *argv[])
             int msg_len;
             /* Get the exact message length */
             if (ioctl(ipcfd, FIONREAD, &msg_len) < 0) {
-                perror("ioctl");
+                syslog(LOG_ERR, "ipc:ioctl(FIONREAD) failed!");
                 break;
             }
 
             char msg[msg_len];
             if (read(ipcfd, msg, msg_len) != msg_len) {
-                perror("read");
+                syslog(LOG_ERR, "ipc:read() failed!");
                 break;
             }
             msg[msg_len] = '\0';
