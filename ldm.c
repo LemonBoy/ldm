@@ -69,7 +69,7 @@ int lock_create(int pid);
 int lock_remove(void);
 int lock_exist(void);
 struct libmnt_fs * fstab_search (struct libmnt_table *tab, struct udev_device *device);
-int device_has_media (struct udev_device *udev, const int dev_type);
+int device_has_media (struct udev_device *udev, const int dev_kind);
 int filesystem_needs_id_fix(char *fs);
 char * device_create_mountpoint(struct device_t *device);
 void device_list_clear(void);
@@ -168,29 +168,26 @@ struct libmnt_fs *
 fstab_search (struct libmnt_table *tab, struct udev_device *udev)
 {
     struct libmnt_fs *ret;
-    const char *tmp;
+    char *tmp;
     char keyword[128];
 
-    /* Try matching the /dev node */
-    tmp = udev_device_get_devnode(udev);
-    /* Is it a logical volume */
-    if (strncmp(tmp, "/dev/dm-", 8)) {
-        ret = mnt_table_find_source(tab, tmp, MNT_ITER_FORWARD);
-        if (ret)
-            return ret;
-    } else {
-        struct udev_list_entry *list_entry;
+    /* Try matching the /dev/ node */
+    tmp = (char *)udev_device_get_devnode(udev);
+    ret = mnt_table_find_source(tab, tmp, MNT_ITER_FORWARD);
+    if (ret)
+        return ret;
 
-        /* Walk all the symbolic links pointing to this volume */
-        udev_list_entry_foreach(list_entry, udev_device_get_devlinks_list_entry(udev)) {
-            ret = mnt_table_find_source(tab, udev_list_entry_get_name(list_entry), MNT_ITER_FORWARD);
-            if (ret)
-                return ret;
-        }
-    }
+    /* Try to resolve the /dev node and retry, this expands the dm-n to the full path */
+    tmp = mnt_resolve_path(tmp, NULL);
+    if (!tmp)
+        return NULL;
+    ret = mnt_table_find_source(tab, tmp, MNT_ITER_FORWARD);
+    free(tmp);
+    if (ret)
+        return ret;
 
     /* Try matching the uuid */
-    tmp = udev_device_get_property_value(udev, "ID_FS_UUID");
+    tmp = (char *)udev_device_get_property_value(udev, "ID_FS_UUID");
     if (!tmp)
         return NULL;
     snprintf(keyword, sizeof(keyword), "UUID=%s", tmp);
@@ -199,7 +196,7 @@ fstab_search (struct libmnt_table *tab, struct udev_device *udev)
         return ret;
 
     /* Try matching the label */
-    tmp = udev_device_get_property_value(udev, "ID_FS_LABEL");
+    tmp = (char *)udev_device_get_property_value(udev, "ID_FS_LABEL");
     if (!tmp)
         return NULL;
     snprintf(keyword, sizeof(keyword), "LABEL=%s", tmp);
@@ -223,12 +220,12 @@ fstab_has_option (struct libmnt_table *tab, struct udev_device *udev, const char
 }
 
 int
-device_has_media (struct udev_device *udev, const int dev_type)
+device_has_media (struct udev_device *udev, const int dev_kind)
 {
     if (!udev)
         return 0;
 
-    switch (dev_type) {
+    switch (dev_kind) {
         case DEVICE_VOLUME:
             return (udev_device_get_property_value(udev, "ID_FS_USAGE") != NULL);
         case DEVICE_CD:
@@ -380,26 +377,26 @@ device_new (struct udev_device *dev)
     struct device_t *device;
     struct libmnt_fs *fstab_entry;
 
+    const char *dev_node;
     const char *dev_type;
     const char *dev_idtype;
-    char *dev_node;
-    char *dev_fs;
+    const char *dev_fs;
     int dev_kind;
 
     /* First of all check wether we're dealing with a noauto device */
     if (fstab_has_option(g_fstab, dev, "+noauto"))
         return NULL;
 
-    dev_node = xstrdup(udev_device_get_devnode(dev));
-    dev_fs   = xstrdup(udev_device_get_property_value(dev, "ID_FS_TYPE"));
-
-    dev_type   = udev_device_get_devtype(dev);
-    dev_idtype = udev_device_get_property_value(dev, "ID_TYPE");
+    dev_node = udev_device_get_devnode(dev);
+    dev_fs = udev_device_get_property_value(dev, "ID_FS_TYPE");
 
     /* Avoid mounting swap partitions because we're not intrested in those and LVM/LUKS
      * containers as udev issues another event for each single partition contained in them */
     if (!xstrcmp(dev_fs, "swap") || !xstrcmp(dev_fs, "LVM2_member") || !xstrcmp(dev_fs, "crypto_LUKS"))
         return NULL;
+
+    dev_type = udev_device_get_devtype(dev);
+    dev_idtype = udev_device_get_property_value(dev, "ID_TYPE");
 
     if (!xstrcmp(dev_type, "partition") && !xstrcmp(dev_idtype, "disk"))
         dev_kind = DEVICE_VOLUME;
@@ -423,8 +420,8 @@ device_new (struct udev_device *dev)
 
     device->udev = dev;
     device->kind = dev_kind;
-    device->devnode = dev_node;
-    device->filesystem = dev_fs;
+    device->devnode = xstrdup(dev_node);
+    device->filesystem = xstrdup(dev_fs);
 
     /* Increment the refcount */
     udev_device_ref(device->udev);
@@ -691,7 +688,7 @@ fifo_open (int oldfd, const int mode)
 {
     int fd;
 
-    if (oldfd)
+    if (oldfd > 0)
         close(oldfd);
 
     if ((fd = open(FIFO_PATH, mode)) < 0) {
