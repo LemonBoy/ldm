@@ -30,10 +30,11 @@ enum {
     QUIRK_FLUSH = (1<<3)
 };
 
-typedef struct device_t  {
+typedef struct device_t {
     int kind;
+    char *node;
+    char *rnode; /* Pointer to the resolved /dev node */
     char *filesystem;
-    char *devnode;
     char *mountpoint;
     struct udev_device *udev;
 } device_t;
@@ -60,28 +61,6 @@ static int g_running;
 static int g_gid, g_uid;
 static char *g_mount_path;
 static char *g_callback_path;
-
-/* Functions declaration */
-char * xstrdup(const char *str);
-int xstrcmp (const char *s1, const char *s2);
-int lock_create(int pid);
-int lock_remove(void);
-int lock_exist(void);
-struct libmnt_fs * fstab_search (struct libmnt_table *tab, struct udev_device *device);
-int device_has_media (struct udev_device *udev, const int dev_kind);
-int filesystem_needs_id_fix(char *fs);
-char * device_create_mountpoint(struct device_t *device);
-void device_list_clear(void);
-int device_register(struct device_t *dev);
-void device_destroy(struct device_t *dev);
-struct device_t * device_search(const char *devnode);
-struct device_t * device_new(struct udev_device *dev);
-int device_mount(struct udev_device *dev);
-int device_unmount(struct udev_device *dev);
-int device_change(struct udev_device *dev);
-void mount_plugged_devices(struct udev *udev);
-void sig_handler(int signal);
-int daemonize(void);
 
 /* A less stupid strdup */
 
@@ -114,18 +93,6 @@ lock_create (int pid)
     fprintf(g_lockfd, "%d", pid);
     fclose(g_lockfd);
     return 1;
-}
-
-int
-lock_remove (void)
-{
-    return (remove(LOCK_PATH) == 0);
-}
-
-int
-lock_exist (void)
-{
-    return (access(LOCK_PATH, F_OK) != -1);
 }
 
 /* Spawn helper */
@@ -261,7 +228,6 @@ device_create_mountpoint (struct device_t *device)
     char tmp[PATH_MAX];
     char *c;
     const char *label, *uuid, *serial;
-    struct stat st;
 
     label = udev_device_get_property_value(device->udev, "ID_FS_LABEL");
     uuid = udev_device_get_property_value(device->udev, "ID_FS_UUID");
@@ -283,7 +249,7 @@ device_create_mountpoint (struct device_t *device)
     }
 
     /* Check if there's another folder with the same name */
-    while (!stat(tmp, &st)) {
+    while (access(tmp, F_OK) != -1) {
         /* We tried hard and failed */
         if (strlen(tmp) == sizeof(tmp) - 2)
             return NULL;
@@ -292,18 +258,6 @@ device_create_mountpoint (struct device_t *device)
     }
 
     return xstrdup(tmp);
-}
-
-void
-device_list_clear (void)
-{
-    int j;
-
-    for (j = 0; j < MAX_DEVICES; j++) {
-        if (g_devices[j])
-            device_unmount(g_devices[j]->udev);
-        g_devices[j] = NULL;
-    }
 }
 
 int
@@ -331,7 +285,8 @@ device_destroy (struct device_t *dev)
             break;
     }
 
-    free(dev->devnode);
+    free(dev->node);
+    free(dev->rnode);
     free(dev->filesystem);
     free(dev->mountpoint);
     udev_device_unref(dev->udev);
@@ -349,13 +304,16 @@ struct device_t *
 device_search (const char *path)
 {
     int j;
+    device_t *dev;
 
     if (!path)
         return NULL;
 
     for (j = 0; j < MAX_DEVICES; j++) {
-        if (g_devices[j]) {
-            if (!xstrcmp(g_devices[j]->devnode, path) || !xstrcmp(g_devices[j]->mountpoint, path))
+        dev = g_devices[j];
+
+        if (dev) {
+            if (!xstrcmp(dev->node, path) || !xstrcmp(dev->rnode, path) || !xstrcmp(dev->mountpoint, path))
                 return g_devices[j];
         }
     }
@@ -419,7 +377,8 @@ device_new (struct udev_device *dev)
 
     device->udev = dev;
     device->kind = dev_kind;
-    device->devnode = xstrdup(dev_node);
+    device->node = xstrdup(dev_node);
+    device->rnode = mnt_resolve_path(dev_node, NULL);
     device->filesystem = xstrdup(dev_fs);
 
     /* Increment the refcount */
@@ -443,6 +402,37 @@ device_new (struct udev_device *dev)
     }
 
     return device;
+}
+
+int
+device_unmount (struct udev_device *dev)
+{
+    struct device_t *device;
+    struct libmnt_context *ctx;
+
+    device = device_search((char *)udev_device_get_devnode(dev));
+
+    if (!device)
+        return 0;
+
+    if (device_is_mounted(dev)) {
+        ctx = mnt_new_context();
+        mnt_context_set_target(ctx, device->rnode);
+        if (mnt_context_umount(ctx)) {
+            syslog(LOG_ERR, "Error while unmounting %s (%s)", device->rnode, strerror(errno));
+            mnt_free_context(ctx);
+            return 0;
+        }
+        mnt_free_context(ctx);
+    }
+
+    rmdir(device->mountpoint);
+
+    spawn_helper(g_callback_path, "unmount", device->mountpoint);
+
+    device_destroy(device);
+
+    return 1;
 }
 
 int
@@ -485,7 +475,7 @@ device_mount (struct udev_device *dev)
     ctx = mnt_new_context();
 
     mnt_context_set_fstype(ctx, device->filesystem);
-    mnt_context_set_source(ctx, device->devnode);
+    mnt_context_set_source(ctx, device->rnode);
     mnt_context_set_target(ctx, device->mountpoint);
     mnt_context_set_options(ctx, opt_fmt);
 
@@ -493,7 +483,7 @@ device_mount (struct udev_device *dev)
         mnt_context_set_mflags(ctx, MS_RDONLY);
 
     if (mnt_context_mount(ctx)) {
-        syslog(LOG_ERR, "Error while mounting %s (%s)", device->devnode, strerror(errno));
+        syslog(LOG_ERR, "Error while mounting %s (%s)", device->rnode, strerror(errno));
         mnt_free_context(ctx);
         device_unmount(dev);
         return 0;
@@ -510,37 +500,6 @@ device_mount (struct udev_device *dev)
     }
 
     spawn_helper(g_callback_path, "mount", device->mountpoint);
-
-    return 1;
-}
-
-int
-device_unmount (struct udev_device *dev)
-{
-    struct device_t *device;
-    struct libmnt_context *ctx;
-
-    device = device_search((char *)udev_device_get_devnode(dev));
-
-    if (!device)
-        return 0;
-
-    if (device_is_mounted(dev)) {
-        ctx = mnt_new_context();
-        mnt_context_set_target(ctx, device->devnode);
-        if (mnt_context_umount(ctx)) {
-            syslog(LOG_ERR, "Error while unmounting %s (%s)", device->devnode, strerror(errno));
-            mnt_free_context(ctx);
-            return 0;
-        }
-        mnt_free_context(ctx);
-    }
-
-    rmdir(device->mountpoint);
-
-    spawn_helper(g_callback_path, "unmount", device->mountpoint);
-
-    device_destroy(device);
 
     return 1;
 }
@@ -573,10 +532,10 @@ device_change (struct udev_device *dev)
 }
 
 /* Strip the trailing slash. Brutally. */
-#define strip_slash(s) do { int l = strlen(s); if (l && s[l-1] == '/') s[l-1] = '\0'; } while(0)
+#define strip_slash(s) do { size_t l = strlen(s); if (l && s[l-1] == '/') s[l-1] = '\0'; } while(0)
 
 void
-handle_ipc_event (int ipcfd, char *msg)
+handle_ipc_event (char *msg)
 {
     struct device_t *device;
 
@@ -605,6 +564,18 @@ check_registered_devices (void)
             device_unmount(g_devices[j]->udev);
     }
 
+}
+
+void
+device_list_clear (void)
+{
+    int j;
+
+    for (j = 0; j < MAX_DEVICES; j++) {
+        if (g_devices[j])
+            device_unmount(g_devices[j]->udev);
+        g_devices[j] = NULL;
+    }
 }
 
 void
@@ -657,11 +628,8 @@ daemonize (void)
     if (child_pid < 0)
         return 0;
 
-    /* The parent writes the lock then exits */
-    if (child_pid > 0) {
-        lock_create(child_pid);
-        exit(0);
-    }
+    if (child_pid > 0)
+        exit(EXIT_SUCCESS);
 
     if (chdir("/") < 0) {
         perror("chdir");
@@ -728,6 +696,7 @@ main (int argc, char *argv[])
     daemon  =  0;
     g_uid   = -1;
     g_gid   = -1;
+    watchd  = -1;
 
     while ((opt = getopt(argc, argv, "hdg:u:r:p:c:")) != -1) {
         switch (opt) {
@@ -803,7 +772,7 @@ main (int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    if (lock_exist()) {
+    if (access(LOCK_PATH, F_OK) != -1) {
         fprintf(stderr, "ldm is already running!\n");
         return EXIT_SUCCESS;
     }
@@ -833,6 +802,8 @@ main (int argc, char *argv[])
         fprintf(stderr, "Could not spawn the daemon!\n");
         return EXIT_FAILURE;
     }
+
+    lock_create(getpid());
 
     openlog("ldm", LOG_CONS, LOG_DAEMON);
 
@@ -951,7 +922,7 @@ main (int argc, char *argv[])
             }
             msg[msg_len] = '\0';
 
-            handle_ipc_event(ipcfd, msg);
+            handle_ipc_event(msg);
 
             /* The fifo is closed once the other end finishes sending the data so just reopen it. */
             pollfd[3].fd = ipcfd = fifo_open(ipcfd, O_RDONLY | O_NONBLOCK);
@@ -970,6 +941,7 @@ cleanup:
     close(pollfd[2].fd);
 
     unlink(FIFO_PATH);
+    unlink(LOCK_PATH);
 
     device_list_clear();
 
@@ -980,7 +952,6 @@ cleanup:
     mnt_free_table(g_mtab);
 
     syslog(LOG_INFO, "Terminating...");
-    lock_remove();
 
     return EXIT_SUCCESS;
 }
