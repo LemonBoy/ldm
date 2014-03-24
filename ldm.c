@@ -210,7 +210,7 @@ filesystem_quirks (char *fs)
         { "umsdos", QUIRK_OWNER_FIX | QUIRK_UTF8_FLAG },
         { "vfat",   QUIRK_OWNER_FIX | QUIRK_UTF8_FLAG | QUIRK_MASK | QUIRK_FLUSH },
         { "exfat",  QUIRK_OWNER_FIX },
-        { "ntfs",   QUIRK_OWNER_FIX | QUIRK_UTF8_FLAG },
+        { "ntfs",   QUIRK_OWNER_FIX | QUIRK_UTF8_FLAG | QUIRK_MASK },
         { "iso9660",QUIRK_OWNER_FIX | QUIRK_UTF8_FLAG },
         { "udf",    QUIRK_OWNER_FIX },
     };
@@ -468,7 +468,7 @@ device_mount (struct udev_device *dev)
         if (quirks & QUIRK_FLUSH)
             p += sprintf(p, "flush,");
         if (quirks & QUIRK_MASK)
-            p += sprintf(p, "dmask=000,fmask=111,");
+            p += sprintf(p, "dmask=022,fmask=133,");
     }
     *p = 0;
 
