@@ -724,10 +724,12 @@ main (int argc, char *argv[])
                 g_mount_path = xstrdup(optarg);
                 break;
             case 'c':
-                if (access(optarg, F_OK | X_OK) < 0)
+                if (access(optarg, F_OK | X_OK) < 0) {
                     fprintf(stderr, "Callback script not found or not executable\n");
-                else
-                    g_callback_path = xstrdup(optarg);
+                    return EXIT_FAILURE;
+                }
+                g_callback_path = xstrdup(optarg);
+                break;
             case 'h':
                 printf("ldm "VERSION_STR"\n");
                 printf("2011-2014 (C) The Lemon Man\n");
