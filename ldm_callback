@@ -1,11 +1,12 @@
 #!/bin/bash
 
-logger -t "ldm-helper" "$1 $2 $3"
 
 ACTION="$1"
 MOUNTPOINT="$2"
 FILESYSTEM="$3"
 DEVNODE="$4"
+
+logger -t "ldm-helper" "$ACTION $MOUNTPOINT $FILESYSTEM $DEVNODE"
 
 case "$ACTION" in
     test)
@@ -18,12 +19,13 @@ case "$ACTION" in
         # ** Do not mount the root partition from my other linux
         case "$MOUNTPOINT" in
             *cruxroot) exit 1 ;;
+            *ipod) exit 1 ;;
         esac
 
         # ** Do not mount mapper devices, these are usually already mounted
         #    when using pmount.
         case "$DEVNODE" in
-            *mapper*) exit 1 ;;
+            */dm-*) exit 1 ;;
         esac
         ;;
     mount)
