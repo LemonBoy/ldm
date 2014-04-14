@@ -14,7 +14,7 @@
 #include <libmount/libmount.h>
 #include <errno.h>
 
-#define VERSION_STR "0.4.3"
+#define VERSION_STR "0.5"
 
 enum {
     DEVICE_VOLUME,

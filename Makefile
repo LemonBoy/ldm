@@ -1,16 +1,18 @@
-CC ?= gcc
-CFLAGS := -O2 $(CFLAGS)
-LDFLAGS := -ludev -lmount $(LDFLAGS)
-CFDEBUG = -g3 -pedantic -Wall -Wunused-parameter -Wlong-long
-CFDEBUG += -Wsign-conversion -Wconversion -Wimplicit-function-declaration
+EXEC = ldm
+VERSION = $(shell grep 'VERSION_STR ' ldm.c | cut -d'"' -f2)
+
+SRCS = ldm.c
+OBJS = $(SRCS:.c=.o)
 
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
 SYSTEMDDIR ?= $(PREFIX)/lib/systemd
 
-EXEC = ldm
-SRCS = ldm.c
-OBJS = $(SRCS:.c=.o)
+CC ?= gcc
+CFLAGS := -O2 $(CFLAGS)
+LDFLAGS := -ludev -lmount $(LDFLAGS)
+CFDEBUG = -g3 -pedantic -Wall -Wunused-parameter -Wlong-long
+CFDEBUG += -Wsign-conversion -Wconversion -Wimplicit-function-declaration
 
 all: $(EXEC) doc
 
@@ -24,7 +26,7 @@ debug: $(EXEC)
 debug: CC += $(CFDEBUG)
 
 doc: README.pod
-	@pod2man --section=1 --center="ldm Manual" --name "ldm" --release="ldm $(shell git describe)" README.pod > ldm.1
+	@pod2man --section=1 --center="ldm Manual" --name "ldm" --release="ldm $(VERSION)" README.pod > ldm.1
 
 clean:
 	$(RM) *.o *.1 ldm
