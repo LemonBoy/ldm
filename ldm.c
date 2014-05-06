@@ -13,6 +13,7 @@
 #include <sys/ioctl.h>
 #include <libmount/libmount.h>
 #include <errno.h>
+#include <dirent.h>
 
 #define VERSION_STR "0.4.3"
 
@@ -228,6 +229,8 @@ device_create_mountpoint (struct device_t *device)
     char tmp[PATH_MAX];
     char *c;
     const char *label, *uuid, *serial;
+    int file_count;
+    DIR *dir;
 
     label = udev_device_get_property_value(device->udev, "ID_FS_LABEL");
     uuid = udev_device_get_property_value(device->udev, "ID_FS_UUID");
@@ -253,7 +256,22 @@ device_create_mountpoint (struct device_t *device)
         /* We tried hard and failed */
         if (strlen(tmp) == sizeof(tmp) - 2)
             return NULL;
-        /* Append a trailing _ */
+
+        /* Reuse the directory if it's empty */
+        if ((dir = opendir(tmp)) != NULL) {
+            file_count = 0;
+            while (readdir(dir) != NULL) {
+                if (++file_count > 2)
+                    break;
+            }
+            closedir(dir);
+
+            /* Directory is empty, reuse for mounting */
+            if (file_count <= 2)
+                break;
+        }
+
+        /* Directory not empty, append a trailing _ */
         strcat(tmp, "_");
     }
 
