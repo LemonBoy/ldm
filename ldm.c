@@ -59,9 +59,12 @@ static struct libmnt_table *g_mtab;
 static struct device_t *g_devices[MAX_DEVICES];
 static FILE *g_lockfd;
 static int g_running;
+static int g_verbose;
 static int g_gid, g_uid;
 static char *g_mount_path;
 static char *g_callback_path;
+
+#define LOG(...) do { if (g_verbose) fprintf(stderr, __VA_ARGS__); } while(0);
 
 /* A less stupid strdup */
 
@@ -365,6 +368,8 @@ device_new (struct udev_device *dev)
     dev_node = udev_device_get_devnode(dev);
     dev_fs = udev_device_get_property_value(dev, "ID_FS_TYPE");
 
+    LOG("%s\n\tdev_fs : %s\n", dev_node, dev_fs);
+
     /* Avoid mounting swap partitions because we're not intrested in those and LVM/LUKS
      * containers as udev issues another event for each single partition contained in them */
     if (!xstrcmp(dev_fs, "swap") || !xstrcmp(dev_fs, "LVM2_member") || !xstrcmp(dev_fs, "crypto_LUKS"))
@@ -372,6 +377,8 @@ device_new (struct udev_device *dev)
 
     dev_type = udev_device_get_devtype(dev);
     dev_idtype = udev_device_get_property_value(dev, "ID_TYPE");
+
+    LOG("\tdev_type : %s\n\tdev_idtype : %s\n", dev_type, dev_idtype);
 
     if (!xstrcmp(dev_type, "partition") && !xstrcmp(dev_idtype, "disk"))
         dev_kind = DEVICE_VOLUME;
@@ -716,7 +723,7 @@ main (int argc, char *argv[])
     g_gid   = -1;
     watchd  = -1;
 
-    while ((opt = getopt(argc, argv, "hdg:u:r:p:c:")) != -1) {
+    while ((opt = getopt(argc, argv, "hdg:u:r:p:c:V")) != -1) {
         switch (opt) {
             case 'r':
                 ipcfd = fifo_open(-1, O_WRONLY);
@@ -747,6 +754,9 @@ main (int argc, char *argv[])
                     return EXIT_FAILURE;
                 }
                 g_callback_path = xstrdup(optarg);
+                break;
+            case 'V':
+                g_verbose = 1;
                 break;
             case 'h':
                 printf("ldm "VERSION_STR"\n");
