@@ -372,7 +372,7 @@ device_new (struct udev_device *dev)
 
     /* Avoid mounting swap partitions because we're not intrested in those and LVM/LUKS
      * containers as udev issues another event for each single partition contained in them */
-    if (!xstrcmp(dev_fs, "swap") || !xstrcmp(dev_fs, "LVM2_member") || !xstrcmp(dev_fs, "crypto_LUKS"))
+    if (!dev_fs || !xstrcmp(dev_fs, "swap") || !xstrcmp(dev_fs, "LVM2_member") || !xstrcmp(dev_fs, "crypto_LUKS"))
         return NULL;
 
     dev_type = udev_device_get_devtype(dev);
@@ -380,7 +380,7 @@ device_new (struct udev_device *dev)
 
     LOG("\tdev_type : %s\n\tdev_idtype : %s\n", dev_type, dev_idtype);
 
-    if (!xstrcmp(dev_type, "partition") && !xstrcmp(dev_idtype, "disk"))
+    if (!xstrcmp(dev_type, "partition"))
         dev_kind = DEVICE_VOLUME;
     /* LVM partitions */
     else if (udev_device_get_property_value(dev, "DM_NAME") && !xstrcmp(dev_type, "disk"))
