@@ -15,7 +15,7 @@
 #include <errno.h>
 #include <dirent.h>
 
-#define VERSION_STR "0.4.3"
+#define VERSION_STR "0.5.1"
 
 enum {
     DEVICE_VOLUME,
@@ -765,7 +765,7 @@ main (int argc, char *argv[])
                 printf("\t-d Run ldm as a daemon\n");
                 printf("\t-r Removes a mounted device\n");
                 printf("\t-g Specify the gid\n");
-                printf("\t-u Specify the gid\n");
+                printf("\t-u Specify the uid\n");
                 printf("\t-p Specify where to mount the devices\n");
                 printf("\t-c Specify the path to the script executed after mount/unmount events\n");
                 printf("\t-h Show this help\n");
