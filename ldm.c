@@ -6,6 +6,7 @@
 #include <string.h>
 #include <signal.h>
 #include <syslog.h>
+#include <assert.h>
 #include <poll.h>
 #include <libudev.h>
 #include <sys/inotify.h>
@@ -28,7 +29,8 @@ enum {
     QUIRK_OWNER_FIX = (1<<0),
     QUIRK_UTF8_FLAG = (1<<1),
     QUIRK_MASK = (1<<2),
-    QUIRK_FLUSH = (1<<3)
+    QUIRK_FLUSH = (1<<3),
+    QUIRK_RO = (1<<4)
 };
 
 typedef struct device_t {
@@ -102,13 +104,45 @@ lock_create (int pid)
 /* Spawn helper */
 
 int
-spawn_helper (const char *helper, const char *action, char *mountpoint)
+spawn_helper (char *command, char *node, char *action, char *mountpoint)
 {
     pid_t child_pid;
-    int ret;
+    int ret, l;
+    char * const cmd[] = {
+        "/bin/sh",
+        "-c",
+        command,
+        NULL,
+    };
+    int env_len = 38 + strlen(node) + strlen(action) + strlen(mountpoint);
+    char *envp[4];
+    char *env_buf;
 
-    if (!helper)
+    if (!command)
         return 0;
+
+    env_buf = alloca(env_len + 1);
+    if (!env_buf) 
+        return 0;
+
+    envp[0] = env_buf;
+    l = snprintf(env_buf, env_len, "LDM_MOUNTPOINT=%s", mountpoint);
+    env_buf += l + 1;
+    env_len -= l + 1;
+
+    envp[1] = env_buf;
+    l = snprintf(env_buf, env_len, "LDM_NODE=%s", node);
+    env_buf += l + 1;
+    env_len -= l + 1;
+
+    envp[2] = env_buf;
+    l = snprintf(env_buf, env_len, "LDM_ACTION=%s", action);
+    env_buf += l + 1;
+    env_len -= l + 1;
+
+    envp[3] = NULL;
+
+    assert(env_len == 0);
 
     child_pid = fork();
 
@@ -125,9 +159,13 @@ spawn_helper (const char *helper, const char *action, char *mountpoint)
     setgid(g_gid);
     setuid(g_uid);
 
-    execvp(helper, (char *[]){ (char *)helper, (char *)action, mountpoint, NULL });
+    close(STDIN_FILENO);
+    close(STDOUT_FILENO);
+    close(STDERR_FILENO);
+
+    execve(cmd[0], cmd, (char * const *)envp);
     /* Should never reach this */
-    syslog(LOG_ERR, "Could not execute \"%s\"", helper);
+    syslog(LOG_ERR, "Could not execute \"%s\"", command);
     /* Die */
     _Exit(1);
 }
@@ -215,7 +253,7 @@ filesystem_quirks (char *fs)
         { "vfat",   QUIRK_OWNER_FIX | QUIRK_UTF8_FLAG | QUIRK_MASK | QUIRK_FLUSH },
         { "exfat",  QUIRK_OWNER_FIX },
         { "ntfs",   QUIRK_OWNER_FIX | QUIRK_UTF8_FLAG | QUIRK_MASK },
-        { "iso9660",QUIRK_OWNER_FIX | QUIRK_UTF8_FLAG },
+        { "iso9660",QUIRK_OWNER_FIX | QUIRK_UTF8_FLAG | QUIRK_RO },
         { "udf",    QUIRK_OWNER_FIX },
     };
 
@@ -453,7 +491,7 @@ device_unmount (struct udev_device *dev)
 
     rmdir(device->mountpoint);
 
-    spawn_helper(g_callback_path, "unmount", device->mountpoint);
+    spawn_helper(g_callback_path, device->rnode, "unmount", device->mountpoint);
 
     device_destroy(device);
 
@@ -504,7 +542,7 @@ device_mount (struct udev_device *dev)
     mnt_context_set_target(ctx, device->mountpoint);
     mnt_context_set_options(ctx, opt_fmt);
 
-    if (device->kind == DEVICE_CD)
+    if (device->kind == DEVICE_CD || quirks & QUIRK_RO)
         mnt_context_set_mflags(ctx, MS_RDONLY);
 
     if (mnt_context_mount(ctx)) {
@@ -524,7 +562,7 @@ device_mount (struct udev_device *dev)
         }
     }
 
-    spawn_helper(g_callback_path, "mount", device->mountpoint);
+    spawn_helper(g_callback_path, device->rnode, "mount", device->mountpoint);
 
     return 1;
 }
@@ -749,10 +787,6 @@ main (int argc, char *argv[])
                 g_mount_path = xstrdup(optarg);
                 break;
             case 'c':
-                if (access(optarg, F_OK | X_OK) < 0) {
-                    fprintf(stderr, "Callback script not found or not executable\n");
-                    return EXIT_FAILURE;
-                }
                 g_callback_path = xstrdup(optarg);
                 break;
             case 'V':
@@ -960,6 +994,8 @@ main (int argc, char *argv[])
     }
 
 cleanup:
+    device_list_clear();
+
     free(g_callback_path);
     free(g_mount_path);
 
@@ -972,8 +1008,6 @@ cleanup:
 
     unlink(FIFO_PATH);
     unlink(LOCK_PATH);
-
-    device_list_clear();
 
     udev_monitor_unref(monitor);
     udev_unref(udev);
