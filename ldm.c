@@ -107,42 +107,36 @@ int
 spawn_helper (char *command, char *node, char *action, char *mountpoint)
 {
     pid_t child_pid;
-    int ret, l;
-    char * const cmd[] = {
-        "/bin/sh",
-        "-c",
-        command,
-        NULL,
-    };
-    int env_len = 38 + strlen(node) + strlen(action) + strlen(mountpoint);
-    char *envp[4];
-    char *env_buf;
+    int ret, l, env_len;
+    char *env_buf, *envp[4];
+    char * const cmd[] = { "/bin/sh", "-c", command, NULL };
 
     if (!command)
         return 0;
 
+    env_len = 38 + strlen(node) + strlen(action) + strlen(mountpoint);
     env_buf = alloca(env_len + 1);
     if (!env_buf) 
         return 0;
 
     envp[0] = env_buf;
     l = snprintf(env_buf, env_len, "LDM_MOUNTPOINT=%s", mountpoint);
-    env_buf += l + 1;
     env_len -= l + 1;
+    env_buf += l + 1;
 
     envp[1] = env_buf;
     l = snprintf(env_buf, env_len, "LDM_NODE=%s", node);
-    env_buf += l + 1;
     env_len -= l + 1;
+    env_buf += l + 1;
 
     envp[2] = env_buf;
     l = snprintf(env_buf, env_len, "LDM_ACTION=%s", action);
-    env_buf += l + 1;
     env_len -= l + 1;
+    env_buf += l;
 
     envp[3] = NULL;
 
-    assert(env_len == 0);
+    assert(env_len == 0 && *env_buf == '\0');
 
     child_pid = fork();
 
@@ -156,8 +150,10 @@ spawn_helper (char *command, char *node, char *action, char *mountpoint)
     }
 
     /* Drop the root priviledges. Oh and the bass too. */
-    setgid(g_gid);
-    setuid(g_uid);
+    if (setgid(g_gid) < 0)
+        return 0;
+    if (setuid(g_uid) < 0)
+        return 0;
 
     close(STDIN_FILENO);
     close(STDOUT_FILENO);
