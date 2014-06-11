@@ -4,7 +4,7 @@ ldm - Lightweight Device Mounter
 
 =head1 SYNOPSIS
 
-I<ldm> [-d] [-r I<device>] [-g I<gid>] [-u I<uid>] [-p I<path>] [-c I<path>] [-h]
+I<ldm> [-d] [-r I<device>] [-g I<gid>] [-u I<uid>] [-p I<path>] [-c I<command>] [-h]
 
 =head1 DESCRIPTION
 
@@ -34,10 +34,25 @@ Specify the uid of the user owning the mount points.
 
 Specify the base folder for the mount points. The default is /mnt.
 
-=item B<-c> I<path>
+=item B<-c> I<command>
 
-Specify the path to an executable script that is invoked every time a device is mounted or unmounted with the action string (either "mount" or "unmount") and the
-mount point as arguments.
+Specifies a command that is executed after a successful mount/unmount action. The following environment variables are defined :
+
+=over
+
+=item B<LDM_MOUNTPOINT>
+
+The complete path to the mountpoint.
+
+=item B<LDM_NODE>
+
+The path pointing to the device node in /dev
+
+=item B<LDM_ACTION>
+
+The action ldm has just performed, it can either be I<mount> or I<unmount>
+
+=back
 
 =item B<-h>
 
