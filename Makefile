@@ -1,51 +1,49 @@
-CC	?= gcc
-CFLAGS ?= -O2
-LDFLAGS += -ludev -lmount
-CFDEBUG = -g3 -pedantic -Wall -Wunused-parameter -Wlong-long\
-		  -Wsign-conversion -Wconversion -Wimplicit-function-declaration
+CC ?= gcc
+CFLAGS := -O2 $(CFLAGS)
+LDFLAGS := -ludev -lmount $(LDFLAGS)
+CFDEBUG = -g3 -pedantic -Wall -Wunused-parameter -Wlong-long
+CFDEBUG += -Wsign-conversion -Wconversion -Wimplicit-function-declaration
+
+PREFIX ?= /usr/local
+BINDIR ?= $(PREFIX)/bin
+SYSTEMDDIR ?= $(PREFIX)/lib/systemd
 
 EXEC = ldm
 SRCS = ldm.c
-OBJS = ${SRCS:.c=.o}
+OBJS = $(SRCS:.c=.o)
 
-PREFIX?=/usr
-BINDIR=${PREFIX}/bin
-SHAREDIR=${PREFIX}/share/ldm
-DAEMONDIR=/etc/rc.d
-SYSTEMDDIR=/usr/lib/systemd/system
-
-all: ${EXEC}
+all: $(EXEC) doc
 
 .c.o:
-	${CC} ${CFLAGS} -o $@ -c $<
+	$(CC) $(CFLAGS) -o $@ -c $<
 
-${EXEC}: ${OBJS}
-	${CC} ${LDFLAGS} -o ${EXEC} ${OBJS}
+$(EXEC): $(OBJS)
+	$(CC) $(LDFLAGS) -o $(EXEC) $(OBJS)
 
-debug: ${EXEC}
-debug: CC += ${CFDEBUG}
+debug: $(EXEC)
+debug: CC += $(CFDEBUG)
+
+doc: README.pod
+	@pod2man --section=1 --center="ldm Manual" --name "ldm" --release="ldm $(shell git describe)" README.pod > ldm.1
 
 clean:
-	rm -rf ./*.o
-	rm -rf ./ldm
+	$(RM) *.o *.1 ldm
 
 mrproper: clean
-	rm ${EXEC}
+	$(RM) $(EXEC)
 
-install-main: ldm
-	test -d ${DESTDIR}${BINDIR} || mkdir -p ${DESTDIR}${BINDIR}
-	install -m755 ldm ${DESTDIR}${BINDIR}/ldm
-	test -d ${DESTDIR}${SHAREDIR} || mkdir -p ${DESTDIR}${SHAREDIR}
-	install -m755 ldm ${DESTDIR}${SHAREDIR}/ldm_helper_example
-
-install-daemon: ldm.daemon
-	test -d ${DESTDIR}${DAEMONDIR} || mkdir -p ${DESTDIR}${DAEMONDIR}
-	install -m755 ldm.daemon ${DESTDIR}${DAEMONDIR}/ldm
+install-main: ldm doc
+	install -D -m 755 ldm $(DESTDIR)$(BINDIR)/ldm
+	install -D -m 644 ldm.1 $(DESTDIR)$(PREFIX)/share/man/man1/ldm.1
 
 install-systemd: ldm.service
-	test -d ${DESTDIR}${SYSTEMDDIR} || mkdir -p ${DESTDIR}${SYSTEMDDIR}
-	install -m644 ldm.service ${DESTDIR}${SYSTEMDDIR}/
+	install -D -m 644 ldm.service $(DESTDIR)$(SYSTEMDDIR)/system/ldm.service
 
-install: all install-main install-daemon install-systemd
+install: all install-main install-systemd
 
-.PHONY: all debug clean mrproper install install-main install-daemon install-systemd
+uninstall:
+	$(RM) $(DESTDIR)$(BINDIR)/ldm
+	$(RM) $(DESTDIR)$(PREFIX)/share/man/man1/ldm.1
+	$(RM) $(DESTDIR)$(SYSTEMDDIR)/system/ldm.service
+
+.PHONY: all debug clean mrproper install install-main install-systemd uninstall
