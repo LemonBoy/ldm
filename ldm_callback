@@ -1,30 +1,24 @@
 #!/bin/bash
 
+logger -t "ldm-helper" "$LDM_ACTION $LDM_MOUNTPOINT $LDM_FILESYSTEM $LDM_NODE"
 
-ACTION="$1"
-MOUNTPOINT="$2"
-FILESYSTEM="$3"
-DEVNODE="$4"
-
-logger -t "ldm-helper" "$ACTION $MOUNTPOINT $FILESYSTEM $DEVNODE"
-
-case "$ACTION" in
+case "$LDM_ACTION" in
     test)
         # ** Do not try to mount encrypted filesystems
         #    (example, ldm does not try that anyway)
-        case "$FILESYSTEM" in
+        case "$LDM_FILESYSTEM" in
             crypto_LUKS) exit 1 ;;
         esac
 
         # ** Do not mount the root partition from my other linux
-        case "$MOUNTPOINT" in
+        case "$LDM_MOUNTPOINT" in
             *cruxroot) exit 1 ;;
             *ipod) exit 1 ;;
         esac
 
         # ** Do not mount mapper devices, these are usually already mounted
         #    when using pmount.
-        case "$DEVNODE" in
+        case "$LDM_NODE" in
             */dm-*) exit 1 ;;
         esac
         ;;
