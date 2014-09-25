@@ -395,8 +395,10 @@ device_new (struct udev_device *dev)
     const char *dev_fs;
     int dev_kind;
 
+    /* libmount < 2.21 doesn't support '+noauto', using 'noauto' instead */
+    const char *noauto_opt = mnt_parse_version_string(LIBMOUNT_VERSION) < 2210 ? "noauto" : "+noauto";
     /* First of all check wether we're dealing with a noauto device */
-    if (fstab_has_option(g_fstab, dev, "+noauto"))
+    if (fstab_has_option(g_fstab, dev, noauto_opt))
         return NULL;
 
     dev_node = udev_device_get_devnode(dev);

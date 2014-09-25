@@ -66,7 +66,7 @@ ldm doesn't offer any blacklisting by itself but it honors the options found in 
 
 =head1 INSTALL
 
-The included systemd service expects a config file at /etc/ldm.conf which contains your user uid and gid. Don't be scared, it's just a matter of writing down 2 lines using your favourite editor.
+The included systemd service expects a config file at /etc/ldm.conf which contains your user uid and gid. Don't be scared, it's just a matter of writing down 3 lines using your favourite editor.
 
 =begin man
 
@@ -76,6 +76,7 @@ The included systemd service expects a config file at /etc/ldm.conf which contai
 .BB lightgray
 USER_GID = \fIgid\fR
 USER_UID = \fIuid\fR
+BASE_MOUNTPOINT = \fI/mnt\fR
 .EB lightgray
 .fi
 .RE
