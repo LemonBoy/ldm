@@ -3,7 +3,7 @@ Description=lightweight device mounter
 
 [Service]
 EnvironmentFile=/etc/ldm.conf
-ExecStart=/usr/bin/ldm -u $USER_UID -g $USER_GID
+ExecStart=/usr/local/bin/ldm -u ${USER_UID} -g ${USER_GID} -p ${BASE_MOUNTPOINT}
 KillMode=process
 
 [Install]

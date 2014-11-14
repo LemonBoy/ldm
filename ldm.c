@@ -116,7 +116,7 @@ spawn_helper (char *command, char *node, char *action, char *mountpoint, char *f
 
     env_len = 54 + strlen(node) + strlen(action) + strlen(mountpoint) + strlen(filesystem);
     env_buf = alloca(env_len + 1);
-    if (!env_buf) 
+    if (!env_buf)
         return 0;
 
     envp[0] = env_buf;
@@ -400,8 +400,10 @@ device_new (struct udev_device *dev)
     const char *dev_fs;
     int dev_kind;
 
+    /* libmount < 2.21 doesn't support '+noauto', using 'noauto' instead */
+    const char *noauto_opt = mnt_parse_version_string(LIBMOUNT_VERSION) < 2210 ? "noauto" : "+noauto";
     /* First of all check wether we're dealing with a noauto device */
-    if (fstab_has_option(g_fstab, dev, "+noauto"))
+    if (fstab_has_option(g_fstab, dev, noauto_opt))
         return NULL;
 
     dev_node = udev_device_get_devnode(dev);
@@ -722,7 +724,7 @@ isdir (const char *path)
 {
     struct stat st;
 
-    if (stat(path, &st) < 0) 
+    if (stat(path, &st) < 0)
         return 0;
 
     return S_ISDIR(st.st_mode);
@@ -752,6 +754,7 @@ main (int argc, char *argv[])
     struct udev_device  *device;
     const  char         *action;
     struct pollfd        pollfd[4];  /* udev / inotify watch / mtab / fifo */
+    char                 rpath[PATH_MAX];
     int                  opt;
     int                  daemon;
     int                  notifyfd;
@@ -772,8 +775,11 @@ main (int argc, char *argv[])
                 if (ipcfd < 0)
                     return EXIT_FAILURE;
 
+                if (!realpath(optarg, rpath))
+                    return EXIT_FAILURE;
+
                 write(ipcfd, "R", 1);
-                write(ipcfd, optarg, strlen(optarg));
+                write(ipcfd, rpath, strlen(rpath));
                 close(ipcfd);
 
                 return EXIT_SUCCESS;
