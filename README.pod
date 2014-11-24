@@ -52,6 +52,10 @@ The path pointing to the device node in /dev
 
 The action ldm has just performed, it can either be I<mount> or I<unmount>
 
+=item B<LDM_FILESYSTEM>
+
+The filesystem on the device
+
 =back
 
 =item B<-h>
