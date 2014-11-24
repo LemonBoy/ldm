@@ -1,0 +1,36 @@
+#!/bin/bash
+
+logger -t "ldm-helper" "$LDM_ACTION $LDM_MOUNTPOINT $LDM_FILESYSTEM $LDM_NODE"
+
+case "$LDM_ACTION" in
+    test)
+        # ** Do not try to mount encrypted filesystems
+        #    (example, ldm does not try that anyway)
+        case "$LDM_FILESYSTEM" in
+            crypto_LUKS) exit 1 ;;
+        esac
+
+        # ** Do not mount the root partition from my other linux
+        case "$LDM_MOUNTPOINT" in
+            *cruxroot) exit 1 ;;
+            *ipod) exit 1 ;;
+        esac
+
+        # ** Do not mount mapper devices, these are usually already mounted
+        #    when using pmount.
+        case "$LDM_NODE" in
+            */dm-*) exit 1 ;;
+        esac
+        ;;
+    mount)
+        case "$LDM_MOUNTPOINT" in
+            # ** Automatic backuo when appropriate media is inserted
+            *backup-0mark-sd)
+                sudo /opt/bin/rdbks "$LDM_MOUNTPOINT"
+            ;;
+        esac
+        ;;
+    unmount)
+        # No examples yet. Maybe ejection of optical media?
+        ;;
+esac
