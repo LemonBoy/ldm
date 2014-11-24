@@ -23,10 +23,10 @@ case "$LDM_ACTION" in
         esac
         ;;
     mount)
-        case "$2" in
+        case "$LDM_MOUNTPOINT" in
             # ** Automatic backuo when appropriate media is inserted
             *backup-0mark-sd)
-                sudo /opt/bin/rdbks "$2"
+                sudo /opt/bin/rdbks "$LDM_MOUNTPOINT"
             ;;
         esac
         ;;
