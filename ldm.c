@@ -104,17 +104,17 @@ lock_create (int pid)
 /* Spawn helper */
 
 int
-spawn_helper (char *command, char *node, char *action, char *mountpoint)
+spawn_helper (char *command, char *node, char *action, char *mountpoint, char *filesystem)
 {
     pid_t child_pid;
     int ret, l, env_len;
-    char *env_buf, *envp[4];
+    char *env_buf, *envp[5];
     char * const cmd[] = { "/bin/sh", "-c", command, NULL };
 
     if (!command)
         return 0;
 
-    env_len = 38 + strlen(node) + strlen(action) + strlen(mountpoint);
+    env_len = 54 + strlen(node) + strlen(action) + strlen(mountpoint) + strlen(filesystem);
     env_buf = alloca(env_len + 1);
     if (!env_buf)
         return 0;
@@ -132,9 +132,14 @@ spawn_helper (char *command, char *node, char *action, char *mountpoint)
     envp[2] = env_buf;
     l = snprintf(env_buf, env_len, "LDM_ACTION=%s", action);
     env_len -= l + 1;
+    env_buf += l + 1;
+
+    envp[3] = env_buf;
+    l = snprintf(env_buf, env_len, "LDM_FILESYSTEM=%s", filesystem);
+    env_len -= l + 1;
     env_buf += l;
 
-    envp[3] = NULL;
+    envp[4] = NULL;
 
     assert(env_len == 0 && *env_buf == '\0');
 
@@ -146,7 +151,7 @@ spawn_helper (char *command, char *node, char *action, char *mountpoint)
     if (child_pid > 0) {
         wait(&ret);
         /* Return the exit code or 0 if something went wrong */
-        return WIFEXITED(ret) ? WEXITSTATUS(ret) : 0;
+        return WIFEXITED(ret) ? WEXITSTATUS(ret) : EXIT_FAILURE;
     }
 
     /* Drop the root priviledges. Oh and the bass too. */
@@ -489,7 +494,7 @@ device_unmount (struct udev_device *dev)
 
     rmdir(device->mountpoint);
 
-    spawn_helper(g_callback_path, device->rnode, "unmount", device->mountpoint);
+    spawn_helper(g_callback_path, device->rnode, "unmount", device->mountpoint, device->filesystem);
 
     device_destroy(device);
 
@@ -509,6 +514,9 @@ device_mount (struct udev_device *dev)
 
     if (!device)
         return 0;
+
+    if(spawn_helper(g_callback_path, device->rnode, "test", device->mountpoint, device->filesystem))
+      return 0;
 
     mkdir(device->mountpoint, 755);
 
@@ -560,7 +568,7 @@ device_mount (struct udev_device *dev)
         }
     }
 
-    spawn_helper(g_callback_path, device->rnode, "mount", device->mountpoint);
+    spawn_helper(g_callback_path, device->rnode, "mount", device->mountpoint, device->filesystem);
 
     return 1;
 }
