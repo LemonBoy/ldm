@@ -418,6 +418,9 @@ device_new (struct udev_device *dev)
 
 	if (!xstrcmp(dev_type, "partition"))
 		dev_kind = DEVICE_VOLUME;
+	// Partition-less devices
+	else if (dev_fs && !xstrcmp(dev_type, "disk"))
+		dev_kind = DEVICE_VOLUME;
 	// LVM partitions
 	else if (udev_device_get_property_value(dev, "DM_NAME") && !xstrcmp(dev_type, "disk"))
 		dev_kind = DEVICE_VOLUME;
@@ -569,14 +572,11 @@ int
 device_change (struct udev_device *dev)
 {
 	struct device_t *device;
-	const char *id_type;
 
 	device = device_search((char *)udev_device_get_devnode(dev));
 
-	id_type = udev_device_get_property_value(dev, "ID_TYPE");
-
 	// Handle change events for CD drives only
-	if (xstrcmp(id_type, "cd"))
+	if (device && device->kind != DEVICE_CD)
 		return 0;
 
 	if (device) {
