@@ -1,0 +1,45 @@
+=head1 NAME
+
+ldmc - Send commands to a running ldm daemon instance
+
+=head1 SYNOPSIS
+
+I<ldmc> [-l] [-r I<path>] [-h]
+
+=head1 DESCRIPTION
+
+Send commands to the running ldm daemon. See I<OPTIONS> for a list of the supported commands and
+their arguments
+
+=head1 OPTIONS
+
+=over
+
+=item B<-r> I<path>
+
+Ask the running daemon to unmount the device I<path>, where I<path> is either the device node or the
+mountpoint.
+
+=item B<-l>
+
+List the mounted devices. Every entry is in the form
+
+C<v "device node" "filesystem" "mountpoint">
+
+=item B<-h>
+
+Print a brief help and exit.
+
+=back
+
+=head1 SEE ALSO
+
+ldm(1)
+
+=head1 WWW
+
+L<git repository|https://github.com/LemonBoy/ldm>
+
+=head1 AUTHOR
+
+2011-2015 (C) The Lemon Man <thatlemon@gmail.com>

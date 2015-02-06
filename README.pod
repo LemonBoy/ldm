@@ -4,23 +4,20 @@ ldm - Lightweight Device Mounter
 
 =head1 SYNOPSIS
 
-I<ldm> [-d] [-r I<device>] [-g I<gid>] [-u I<uid>] [-p I<path>] [-c I<command>] [-h]
+I<ldm> [-d] [-g I<gid>] [-u I<uid>] [-p I<path>] [-c I<command>] [-h]
 
 =head1 DESCRIPTION
 
 ldm is a lightweight device mounter following the UNIX philosophy written in C and based on udev and libmount.
+The daemon can be controlled with B<ldmc>.
 
 =head1 OPTIONS
 
 =over
 
-=item B<-d> 
+=item B<-d>
 
 Run ldm as a daemon.
-
-=item B<-r> I<device>
-
-Ask the ldm daemon to unmount the selected device.
 
 =item B<-g> I<gid>
 
@@ -47,6 +44,10 @@ The complete path to the mountpoint.
 =item B<LDM_NODE>
 
 The path pointing to the device node in /dev
+
+=item B<LDM_FS>
+
+The filesystem on the mounted device.
 
 =item B<LDM_ACTION>
 
@@ -92,10 +93,14 @@ USER_UID = <i>uid</i></br>
 
 =end html
 
+=head1 SEE ALSO
+
+ldmc(1)
+
 =head1 WWW
 
 L<git repository|https://github.com/LemonBoy/ldm>
 
 =head1 AUTHOR
 
-2011-2014 (C) The Lemon Man <thatlemon@gmail.com>
+2011-2015 (C) The Lemon Man <thatlemon@gmail.com>

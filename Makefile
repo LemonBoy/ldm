@@ -1,40 +1,53 @@
+VERSION=v0.6
+VERSION_GIT=$(shell test -d .git && git describe 2> /dev/null)
+
+ifneq "$(VERSION_GIT)" ""
+VERSION=$(VERSION_GIT)
+endif
+
 CC ?= gcc
-CFLAGS := -O2 $(CFLAGS)
-LDFLAGS := -ludev -lmount $(LDFLAGS)
-CFDEBUG = -g3 -pedantic -Wall -Wunused-parameter -Wlong-long
+CFLAGS += -std=c99 \
+          -D_GNU_SOURCE \
+          -Wall -Wunused-parameter -O2 \
+          -DVERSION_STR="\"$(VERSION)\""
+CFDEBUG  = -g3 -pedantic -Wlong-long
 CFDEBUG += -Wsign-conversion -Wconversion -Wimplicit-function-declaration
 
-PREFIX ?= /usr/local
-BINDIR ?= $(PREFIX)/bin
-SYSTEMDDIR ?= $(PREFIX)/lib/systemd
+LIBS = libudev mount glib-2.0
+LDFLAGS := `pkg-config --libs $(LIBS)` $(LDFLAGS)
 
-EXEC = ldm
-SRCS = ldm.c
-OBJS = $(SRCS:.c=.o)
+BINDIR ?= /usr/bin
+SYSTEMDDIR ?= /usr/lib/systemd
 
-all: $(EXEC) doc
+all: ldm ldmc doc
 
 .c.o:
-	$(CC) $(CFLAGS) -o $@ -c $<
+	$(CC) $(CFLAGS) `pkg-config --cflags $(LIBS)` -o $@ -c $<
 
-$(EXEC): $(OBJS)
-	$(CC) $(LDFLAGS) -o $(EXEC) $(OBJS)
+ldm: ipc.o ldm.o
+	$(CC) $(LDFLAGS) -o ldm ipc.o ldm.o
 
-debug: $(EXEC)
+ldmc: ipc.o ldmc.o
+	$(CC) $(LDFLAGS) -o ldmc ipc.o ldmc.o
+
+debug: ldm ldmc
 debug: CC += $(CFDEBUG)
 
 doc: README.pod
-	@pod2man --section=1 --center="ldm Manual" --name "ldm" --release="ldm $(shell git describe)" README.pod > ldm.1
+	@pod2man --section=1 --center="ldm Manual" --name "ldm" --release="$(VERSION)" README.pod > ldm.1
+	@pod2man --section=1 --center="ldmc Manual" --name "ldmc" --release="$(VERSION)" ldmc.pod > ldmc.1
 
 clean:
-	$(RM) *.o *.1 ldm
+	$(RM) *.o *.1 ldm ldmc
 
 mrproper: clean
-	$(RM) $(EXEC)
+	$(RM) ldm ldmc
 
 install-main: ldm doc
 	install -D -m 755 ldm $(DESTDIR)$(BINDIR)/ldm
-	install -D -m 644 ldm.1 $(DESTDIR)$(PREFIX)/share/man/man1/ldm.1
+	install -D -m 755 ldmc $(DESTDIR)$(BINDIR)/ldmc
+	install -D -m 644 ldm.1 $(DESTDIR)/usr/share/man/man1/ldm.1
+	install -D -m 644 ldmc.1 $(DESTDIR)/usr/share/man/man1/ldmc.1
 
 install-systemd: ldm.service
 	install -D -m 644 ldm.service $(DESTDIR)$(SYSTEMDDIR)/system/ldm.service
@@ -43,7 +56,9 @@ install: all install-main install-systemd
 
 uninstall:
 	$(RM) $(DESTDIR)$(BINDIR)/ldm
-	$(RM) $(DESTDIR)$(PREFIX)/share/man/man1/ldm.1
+	$(RM) $(DESTDIR)$(BINDIR)/ldmc
+	$(RM) $(DESTDIR)/usr/share/man/man1/ldm.1
+	$(RM) $(DESTDIR)/usr/share/man/man1/ldmc.1
 	$(RM) $(DESTDIR)$(SYSTEMDDIR)/system/ldm.service
 
 .PHONY: all debug clean mrproper install install-main install-systemd uninstall
