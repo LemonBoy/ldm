@@ -151,7 +151,7 @@ spawn_helper (char *command, char *node, char *action, char *mountpoint, char *f
     if (child_pid > 0) {
         wait(&ret);
         /* Return the exit code or 0 if something went wrong */
-        return WIFEXITED(ret) ? WEXITSTATUS(ret) : EXIT_FAILURE;
+        return WIFEXITED(ret) ? WEXITSTATUS(ret) : -3;
     }
 
     /* Drop the root priviledges. Oh and the bass too. */
@@ -515,8 +515,7 @@ device_mount (struct udev_device *dev)
     if (!device)
         return 0;
 
-    if(spawn_helper(g_callback_path, device->rnode, "test", device->mountpoint, device->filesystem))
-      return 0;
+    if(spawn_helper(g_callback_path, device->rnode, "test", device->mountpoint, device->filesystem)!=0) return 0;
 
     mkdir(device->mountpoint, 755);
 
