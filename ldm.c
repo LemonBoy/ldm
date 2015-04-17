@@ -950,7 +950,6 @@ main (int argc, char *argv[])
 				printf("2011-2015 (C) The Lemon Man\n");
 				printf("%s [-d | -r | -g | -u | -p | -c | -m | -h]\n", argv[0]);
 				printf("\t-d Run ldm as a daemon\n");
-				printf("\t-r Removes a mounted device\n");
 				printf("\t-g Specify the gid\n");
 				printf("\t-u Specify the uid\n");
 				printf("\t-m Specify the umask or the fmask/dmask\n");
