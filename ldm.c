@@ -4,7 +4,6 @@
 #include <fcntl.h>
 #include <getopt.h>
 #include <glib.h>
-#include <libcryptsetup.h>
 #include <libmount/libmount.h>
 #include <libudev.h>
 #include <limits.h>
@@ -36,18 +35,23 @@ typedef enum {
 	RO        = 0x10,
 } Quirk;
 
-typedef struct device_t {
+typedef struct {
+	int fmask;
+	int dmask;
+} Mask;
+
+typedef struct {
 	VolumeType type;
 	char *node;
 	struct udev_device *dev;
 	char *mp; // The path to the mountpoint
 	char *fs; // The name of the filesystem
-} device_t;
+} Device;
 
-typedef struct fs_quirk_t {
+typedef struct {
 	char *name;
 	Quirk quirks;
-} fs_quirk_t;
+} FsQuirk;
 
 #define FSTAB_PATH  "/etc/fstab"
 #define MTAB_PATH   "/proc/self/mounts"
@@ -62,6 +66,7 @@ static int g_running;
 static int g_gid, g_uid;
 static char *g_mount_path;
 static char *g_callback_cmd;
+static Mask g_mask;
 static GHashTable *g_dev_table;
 
 #define first_nonnull(a,b,c) ((a) ? (a) : ((b) ? (b) : ((c) ? (c) : NULL)))
@@ -96,7 +101,7 @@ lock_create (int pid)
 // Spawn helper
 
 int
-spawn_callback (char *action, device_t *dev)
+spawn_callback (char *action, Device *dev)
 {
 	int ret;
 	pid_t child_pid;
@@ -193,7 +198,6 @@ table_search_by_str (struct libmnt_table *tbl, int type, char *str)
 			fs = mnt_table_find_tag(tbl, "LABEL", str, MNT_ITER_FORWARD);
 			break;
 		default:
-			fprintf(stderr, "table_search_by_str()\n");
 			return NULL;
 	}
 
@@ -201,7 +205,7 @@ table_search_by_str (struct libmnt_table *tbl, int type, char *str)
 }
 
 struct libmnt_fs *
-table_search_by_dev (struct libmnt_table *tbl, device_t *dev)
+table_search_by_dev (struct libmnt_table *tbl, Device *dev)
 {
 	struct libmnt_fs *fs;
 
@@ -268,18 +272,17 @@ fstab_has_option (struct udev_device *udev, const char *option)
 unsigned int
 fs_get_quirks (char *fs)
 {
-	int i;
-	static const fs_quirk_t fs_table [] = {
+	static const FsQuirk fs_table [] = {
 		{ "msdos" , OWNER_FIX | UTF8_FLAG },
 		{ "umsdos", OWNER_FIX | UTF8_FLAG },
-		{ "vfat",	  OWNER_FIX | UTF8_FLAG | MASK | FLUSH },
-		{ "exfat",	OWNER_FIX },
+		{ "vfat",   OWNER_FIX | UTF8_FLAG | MASK | FLUSH },
+		{ "exfat",  OWNER_FIX },
 		{ "ntfs",   OWNER_FIX | UTF8_FLAG | MASK },
 		{ "iso9660",OWNER_FIX | UTF8_FLAG | RO },
 		{ "udf",    OWNER_FIX },
 	};
 
-	for (i = 0; i < sizeof(fs_table)/sizeof(fs_quirk_t); i++) {
+	for (int i = 0; i < sizeof(fs_table)/sizeof(FsQuirk); i++) {
 		if (!strcmp(fs_table[i].name, fs))
 			return fs_table[i].quirks;
 	}
@@ -287,7 +290,7 @@ fs_get_quirks (char *fs)
 }
 
 int
-device_find_predicate (char *key, device_t *value, char *what)
+device_find_predicate (char *key, Device *value, char *what)
 {
 	(void)key;
 
@@ -300,10 +303,10 @@ device_find_predicate (char *key, device_t *value, char *what)
 	return 0;
 }
 // Path is either the /dev/ node or the mountpoint
-struct device_t *
+Device *
 device_search (const char *path)
 {
-	device_t *dev;
+	Device *dev;
 
 	if (!path || !path[0])
 		return NULL;
@@ -318,7 +321,7 @@ device_search (const char *path)
 }
 
 void
-device_free (device_t *dev)
+device_free (Device *dev)
 {
 	if (!dev)
 		return;
@@ -339,11 +342,11 @@ device_free (device_t *dev)
 	free(dev);
 }
 
-device_t *
+Device *
 device_new (struct udev_device *udev)
 {
 	const char *dev_node, *dev_fs, *dev_fs_usage;
-	device_t *dev;
+	Device *dev;
 
 	if (!udev)
 		return NULL;
@@ -352,7 +355,9 @@ device_new (struct udev_device *udev)
 	dev_fs = udev_get_prop(udev, "ID_FS_TYPE");
 	dev_fs_usage = udev_get_prop(udev, "ID_FS_USAGE");
 
+#if 0
 	fprintf(stderr, "%s (FS_USAGE : %s FS_TYPE : %s)\n", dev_node, dev_fs, dev_fs_usage);
+#endif
 
 	if (!dev_fs && !dev_fs_usage)
 		return NULL;
@@ -362,7 +367,7 @@ device_new (struct udev_device *udev)
 		return NULL;
 
 	if (!strcmp(dev_fs_usage, "filesystem")) {
-		dev = calloc(1, sizeof(device_t));
+		dev = calloc(1, sizeof(Device));
 
 		dev->type = VOLUME;
 		dev->dev = udev;
@@ -373,14 +378,16 @@ device_new (struct udev_device *udev)
 	}
 	else {
 		dev = NULL;
+#if 0
 		fprintf(stderr, "Skipping %s (ID_FS_USAGE : %s)\n", dev_node, dev_fs_usage);
+#endif
 	}
 
 	return dev;
 }
 
 char *
-device_get_mp (device_t *dev, const char *base)
+device_get_mp (Device *dev, const char *base)
 {
 	char *unique;
 	char mp[4096];
@@ -425,7 +432,7 @@ device_get_mp (device_t *dev, const char *base)
 }
 
 int
-device_mount (device_t *dev)
+device_mount (Device *dev)
 {
 	char *mp;
 	unsigned int fs_quirks;
@@ -470,7 +477,7 @@ device_mount (device_t *dev)
 		if (fs_quirks & FLUSH)
 			p += sprintf(p, "flush,");
 		if (fs_quirks & MASK)
-			p += sprintf(p, "dmask=022,fmask=133,");
+			p += sprintf(p, "dmask=%04o,fmask=%04o,", g_mask.dmask, g_mask.fmask);
 
 		*p = '\0';
 	}
@@ -514,7 +521,7 @@ device_mount (device_t *dev)
 }
 
 int
-device_unmount (device_t *dev)
+device_unmount (Device *dev)
 {
 	struct libmnt_context *ctx;
 
@@ -545,7 +552,7 @@ device_unmount (device_t *dev)
 void
 on_udev_add (struct udev_device *udev)
 {
-	device_t *dev;
+	Device *dev;
 	const char *dev_node;
 
 	dev_node = udev_device_get_devnode(udev);
@@ -572,7 +579,7 @@ on_udev_add (struct udev_device *udev)
 void
 on_udev_remove (struct udev_device *udev)
 {
-	device_t *dev;
+	Device *dev;
 	const char *dev_node;
 
 	dev_node = udev_device_get_devnode(udev);
@@ -592,7 +599,7 @@ on_udev_remove (struct udev_device *udev)
 void
 on_udev_change (struct udev_device *udev)
 {
-	device_t *dev;
+	Device *dev;
 	const char *dev_node;
 
 	dev_node = udev_device_get_devnode(udev);
@@ -617,7 +624,7 @@ on_mtab_change (void)
 	struct libmnt_tabdiff *diff;
 	struct libmnt_fs *old, *new;
 	struct libmnt_iter *it;
-	device_t *dev;
+	Device *dev;
 	int change_type;
 
 	new_tab = mnt_new_table_from_file(MTAB_PATH);
@@ -645,7 +652,6 @@ on_mtab_change (void)
 	while (!mnt_tabdiff_next_change(diff, it, &new, &old, &change_type)) {
 		switch (change_type) {
 			case MNT_TABDIFF_UMOUNT:
-				fprintf(stderr, "UMOUNT : %s\n", mnt_fs_get_source(new));
 				dev = device_search(mnt_fs_get_source(new));
 
 				if (dev) {
@@ -658,7 +664,6 @@ on_mtab_change (void)
 
 			case MNT_TABDIFF_REMOUNT:
 			case MNT_TABDIFF_MOVE:
-				fprintf(stderr, "REMOUNT/MOVE : %s\n", mnt_fs_get_source(old));
 				dev = device_search(mnt_fs_get_source(old));
 
 				// Disown the device if it has been remounted
@@ -778,7 +783,7 @@ ipc_serve (int client)
 				return 0;
 			}
 
-			device_t *dev = device_search(res);
+			Device *dev = device_search(res);
 			free(res);
 
 			int ok = 0;
@@ -802,7 +807,7 @@ ipc_serve (int client)
 		case 'L': { // List the mounted devices
 			GHashTableIter it;
 			char *node;
-			device_t *dev;
+			Device *dev;
 
 			g_hash_table_iter_init(&it, g_dev_table);
 
@@ -828,13 +833,53 @@ ipc_serve (int client)
 
 void device_clear_list () {
 	GHashTableIter it;
-	device_t *dev;
+	Device *dev;
 
 	g_hash_table_iter_init(&it, g_dev_table);
 	while (g_hash_table_iter_next(&it, NULL, (gpointer)&dev)) {
 		device_unmount(dev);
 	}
 	g_hash_table_destroy(g_dev_table);
+}
+
+char *
+parse_mask (char *args, int *mask)
+{
+	char *end;
+	unsigned long tmp;
+
+	tmp = 0;
+
+	if (args[0] != '0') {
+		// format : rwxrwxrwx
+		if (strlen(args) != 9)
+			return NULL;
+
+		for (int i = 0; i < 9; i++) {
+			if (!strchr("rwx-", args[i])) {
+				fprintf(stderr, "Stray '%c' character in the mask", args[i]);
+				return NULL;
+			}
+			tmp <<= 1;
+			tmp |= (args[i] != '-')? 1: 0;
+		}
+		end = args + 9;
+	}
+	else {
+		// format : 0000
+		if (strlen(args) != 4)
+			return NULL;
+
+		errno = 0;
+		tmp = strtoul(args, &end, 8);
+		perror("strtoul");
+		if (errno)
+			return NULL;
+	}
+
+	*mask = tmp;
+
+	return end;
 }
 
 int
@@ -845,7 +890,7 @@ main (int argc, char *argv[])
 	struct udev_device *device;
 	const char *action;
 	struct pollfd	pollfd[4];  // udev / inotify watch / mtab / fifo
-	char *resolved;
+	char *resolved, *tmp;
 	int	opt;
 	int	daemon;
 	int	ino_fd, ipc_fd, fstab_fd, mtab_fd;
@@ -857,7 +902,10 @@ main (int argc, char *argv[])
 	g_gid	= -1;
 	g_callback_cmd = NULL;
 
-	while ((opt = getopt(argc, argv, "hdg:u:p:c:")) != -1) {
+	g_mask.fmask = 0133;
+	g_mask.dmask = 0022;
+
+	while ((opt = getopt(argc, argv, "hdg:u:p:c:m:")) != -1) {
 		switch (opt) {
 			case 'd':
 				daemon = 1;
@@ -868,6 +916,29 @@ main (int argc, char *argv[])
 			case 'u':
 				g_uid = (int)strtoul(optarg, NULL, 10);
 				break;
+			case 'm':
+				{
+					char *sep = strchr(optarg, ',');
+					if (!sep) {
+						tmp = parse_mask(optarg, &g_mask.fmask);
+						if (!tmp) {
+							fprintf(stderr, "Invalid mask specified!\n");
+							return EXIT_FAILURE;
+						}
+						// The user specified a single mask, use that as umask
+						g_mask.dmask = g_mask.fmask;
+					}
+					else {
+						*sep++ = '\0';
+						// The user specified two distinct masks
+						if (!parse_mask(optarg, &g_mask.fmask) || !parse_mask(sep, &g_mask.dmask)) {
+							fprintf(stderr, "Invalid mask specified!\n");
+							return EXIT_FAILURE;
+						}
+					}
+				}
+				printf("dmask : %04o fmask : %04o\n", g_mask.fmask, g_mask.dmask);
+				break;
 			case 'p':
 				g_mount_path = strdup(optarg);
 				break;
@@ -877,11 +948,12 @@ main (int argc, char *argv[])
 			case 'h':
 				printf("ldm "VERSION_STR"\n");
 				printf("2011-2015 (C) The Lemon Man\n");
-				printf("%s [-d | -r | -g | -u | -p | -c | -h]\n", argv[0]);
+				printf("%s [-d | -r | -g | -u | -p | -c | -m | -h]\n", argv[0]);
 				printf("\t-d Run ldm as a daemon\n");
 				printf("\t-r Removes a mounted device\n");
 				printf("\t-g Specify the gid\n");
 				printf("\t-u Specify the uid\n");
+				printf("\t-m Specify the umask or the fmask/dmask\n");
 				printf("\t-p Specify where to mount the devices\n");
 				printf("\t-c Specify the path to the script executed after mount/unmount events\n");
 				printf("\t-h Show this help\n");
@@ -918,6 +990,10 @@ main (int argc, char *argv[])
 
 	// Resolve the mount point path before using it
 	resolved = realpath(g_mount_path, NULL);
+	if (!resolved) {
+		perror("realpath()");
+		return EXIT_FAILURE;
+	}
 	free(g_mount_path);
 	g_mount_path = resolved;
 
