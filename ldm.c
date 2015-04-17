@@ -312,10 +312,10 @@ device_search (const char *path)
 		return NULL;
 
 	// This is the fast path, let's just hope it's a /dev/ node
-	dev = g_hash_table_lookup (g_dev_table, path);
+	dev = g_hash_table_lookup(g_dev_table, path);
 
 	if (!dev)
-		dev = g_hash_table_find (g_dev_table, (GHRFunc)device_find_predicate, (gpointer)path);
+		dev = g_hash_table_find(g_dev_table, (GHRFunc)device_find_predicate, (gpointer)path);
 
 	return dev;
 }
@@ -611,7 +611,7 @@ on_udev_change (struct udev_device *udev)
 			g_hash_table_remove(g_dev_table, dev_node);
 	}
 
-	if (!strcmp (udev_get_prop(udev, "ID_TYPE"), "cd") &&
+	if (!strcmp(udev_get_prop(udev, "ID_TYPE"), "cd") &&
 			NULL !=  udev_get_prop(udev, "ID_CDROM_MEDIA")) {
 			device_mount(dev);
 	}
@@ -842,10 +842,9 @@ void device_clear_list () {
 	g_hash_table_destroy(g_dev_table);
 }
 
-char *
+int
 parse_mask (char *args, int *mask)
 {
-	char *end;
 	unsigned long tmp;
 
 	tmp = 0;
@@ -853,33 +852,32 @@ parse_mask (char *args, int *mask)
 	if (args[0] != '0') {
 		// format : rwxrwxrwx
 		if (strlen(args) != 9)
-			return NULL;
+			return 0;
 
 		for (int i = 0; i < 9; i++) {
 			if (!strchr("rwx-", args[i])) {
 				fprintf(stderr, "Stray '%c' character in the mask", args[i]);
-				return NULL;
+				return 0;
 			}
 			tmp <<= 1;
 			tmp |= (args[i] != '-')? 1: 0;
 		}
-		end = args + 9;
 	}
 	else {
 		// format : 0000
 		if (strlen(args) != 4)
-			return NULL;
+			return 0;
 
 		errno = 0;
-		tmp = strtoul(args, &end, 8);
+		tmp = strtoul(args, NULL, 8);
 		perror("strtoul");
 		if (errno)
-			return NULL;
+			return 0;
 	}
 
 	*mask = tmp;
 
-	return end;
+	return 1;
 }
 
 int
@@ -890,7 +888,7 @@ main (int argc, char *argv[])
 	struct udev_device *device;
 	const char *action;
 	struct pollfd	pollfd[4];  // udev / inotify watch / mtab / fifo
-	char *resolved, *tmp;
+	char *resolved;
 	int	opt;
 	int	daemon;
 	int	ino_fd, ipc_fd, fstab_fd, mtab_fd;
@@ -919,9 +917,9 @@ main (int argc, char *argv[])
 			case 'm':
 				{
 					char *sep = strchr(optarg, ',');
+
 					if (!sep) {
-						tmp = parse_mask(optarg, &g_mask.fmask);
-						if (!tmp) {
+						if (!parse_mask(optarg, &g_mask.fmask)) {
 							fprintf(stderr, "Invalid mask specified!\n");
 							return EXIT_FAILURE;
 						}
@@ -937,7 +935,6 @@ main (int argc, char *argv[])
 						}
 					}
 				}
-				printf("dmask : %04o fmask : %04o\n", g_mask.fmask, g_mask.dmask);
 				break;
 			case 'p':
 				g_mount_path = strdup(optarg);
@@ -1053,7 +1050,7 @@ main (int argc, char *argv[])
 	}
 
 	// Create the hashtable holding the mounted devices
-	g_dev_table = g_hash_table_new_full (g_str_hash, g_str_equal, NULL, (GDestroyNotify)device_free);
+	g_dev_table = g_hash_table_new_full(g_str_hash, g_str_equal, NULL, (GDestroyNotify)device_free);
 
 	// Load the tables
 	g_fstab = mnt_new_table_from_file(FSTAB_PATH);
