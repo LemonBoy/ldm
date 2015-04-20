@@ -355,10 +355,6 @@ device_new (struct udev_device *udev)
 	dev_fs = udev_get_prop(udev, "ID_FS_TYPE");
 	dev_fs_usage = udev_get_prop(udev, "ID_FS_USAGE");
 
-#if 0
-	fprintf(stderr, "%s (FS_USAGE : %s FS_TYPE : %s)\n", dev_node, dev_fs, dev_fs_usage);
-#endif
-
 	if (!dev_fs && !dev_fs_usage)
 		return NULL;
 
@@ -378,9 +374,6 @@ device_new (struct udev_device *udev)
 	}
 	else {
 		dev = NULL;
-#if 0
-		fprintf(stderr, "Skipping %s (ID_FS_USAGE : %s)\n", dev_node, dev_fs_usage);
-#endif
 	}
 
 	return dev;
@@ -398,8 +391,8 @@ device_get_mp (Device *dev, const char *base)
 
 	// Use the first non-null field
 	unique = first_nonnull(udev_get_prop(dev->dev, "ID_FS_LABEL"),
-                         udev_get_prop(dev->dev, "ID_FS_UUID"),
-                         udev_get_prop(dev->dev, "ID_SERIAL"));
+	                       udev_get_prop(dev->dev, "ID_FS_UUID"),
+	                       udev_get_prop(dev->dev, "ID_SERIAL"));
 
 	if (!unique)
 		return NULL;
@@ -428,7 +421,7 @@ device_get_mp (Device *dev, const char *base)
 		strcat(mp, "_");
 	}
 
-	return strdup(mp);;
+	return strdup(mp);
 }
 
 int
@@ -484,13 +477,6 @@ device_mount (Device *dev)
 
 	ctx = mnt_new_context();
 
-#if 0
-	fprintf(stderr, "fs   : %s\n", dev->fs);
-	fprintf(stderr, "node : %s\n", dev->node);
-	fprintf(stderr, "mp   : %s\n", dev->mp);
-	fprintf(stderr, "opt  : %s\n", opt_fmt);
-#endif
-
 	mnt_context_set_fstype(ctx, dev->fs);
 	mnt_context_set_source(ctx, dev->node);
 	mnt_context_set_target(ctx, dev->mp);
@@ -515,7 +501,7 @@ device_mount (Device *dev)
 		}
 	}
 
-	(void)spawn_callback ("mount", dev);
+	(void)spawn_callback("mount", dev);
 
 	return 1;
 }
@@ -542,7 +528,7 @@ device_unmount (Device *dev)
 
 	rmdir(dev->mp);
 
-	(void)spawn_callback ("unmount", dev);
+	(void)spawn_callback("unmount", dev);
 
 	return 1;
 }
