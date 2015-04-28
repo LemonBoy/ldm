@@ -4,7 +4,7 @@ ldm - Lightweight Device Mounter
 
 =head1 SYNOPSIS
 
-I<ldm> [-d] [-g I<gid>] [-u I<uid>] [-p I<path>] [-c I<command>] [-h]
+I<ldm> [-d] [-g I<gid>] [-u I<uid>] [-p I<path>] [-c I<command>] [-m I<mask>] [-h]
 
 =head1 DESCRIPTION
 
@@ -30,6 +30,14 @@ Specify the uid of the user owning the mount points.
 =item B<-p> I<path>
 
 Specify the base folder for the mount points. The default is /mnt.
+
+=item B<-m> I<fmask>,I<dmask>
+
+Specify the fmask and dmask for the mounted devices in octal or symbolic format (eg. the octal mask
+0777 is represented as rwxrwxrwx).
+
+If only the I<fmask> is specified then its used as umask and it's
+value is used as dmask too.
 
 =item B<-c> I<command>
 
@@ -67,7 +75,9 @@ ldm doesn't offer any blacklisting by itself but it honors the options found in 
 
 =head1 INSTALL
 
-The included systemd service expects a config file at /etc/ldm.conf which contains your user uid and gid. Don't be scared, it's just a matter of writing down 3 lines using your favourite editor.
+The included systemd service expects a config file at /etc/ldm.conf which contains your user uid and gid.
+
+Don't be scared, it's just a matter of writing down 3 lines using your favourite editor.
 
 =begin man
 
@@ -89,6 +99,7 @@ BASE_MOUNTPOINT = \fI/mnt\fR
 <code>
 USER_GID = <i>gid</i></br>
 USER_UID = <i>uid</i></br>
+BASE_MOUNTPOINT = <i>/mnt</i></br>
 </code>
 
 =end html
