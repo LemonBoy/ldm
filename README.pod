@@ -77,8 +77,6 @@ ldm doesn't offer any blacklisting by itself but it honors the options found in 
 
 The included systemd service expects a config file at /etc/ldm.conf which contains your user uid and gid.
 
-Don't be scared, it's just a matter of writing down 3 lines using your favourite editor.
-
 =begin man
 
 .sp
@@ -96,11 +94,13 @@ BASE_MOUNTPOINT = \fI/mnt\fR
 
 =begin html
 
+<pre>
 <code>
-USER_GID = <i>gid</i></br>
-USER_UID = <i>uid</i></br>
-BASE_MOUNTPOINT = <i>/mnt</i></br>
+USER_GID = <i>gid</i>
+USER_UID = <i>uid</i>
+BASE_MOUNTPOINT = <i>/mnt</i>
 </code>
+</pre>
 
 =end html
 
