@@ -355,7 +355,7 @@ device_new (struct udev_device *udev)
 	dev_fs = udev_get_prop(udev, "ID_FS_TYPE");
 	dev_fs_usage = udev_get_prop(udev, "ID_FS_USAGE");
 
-	if (!dev_fs && !dev_fs_usage)
+	if (!dev_fs || !dev_fs_usage)
 		return NULL;
 
 	// Avoid empty cd/dvd drives
@@ -586,7 +586,7 @@ void
 on_udev_change (struct udev_device *udev)
 {
 	Device *dev;
-	const char *dev_node;
+	const char *dev_node, *type;
 
 	dev_node = udev_device_get_devnode(udev);
 
@@ -597,10 +597,19 @@ on_udev_change (struct udev_device *udev)
 			g_hash_table_remove(g_dev_table, dev_node);
 	}
 
-	if (!strcmp(udev_get_prop(udev, "ID_TYPE"), "cd") &&
-			NULL !=  udev_get_prop(udev, "ID_CDROM_MEDIA")) {
-			device_mount(dev);
+	type = udev_get_prop(udev, "ID_TYPE");
+
+	if (!type) {
+		return;
 	}
+
+	// Exit if there's no optical media
+	if (!strcmp(type, "cd") && !udev_prop_true(udev, "ID_CDROM_MEDIA")) {
+		return;
+	}
+
+	// Try to mount the new device if possible
+	device_mount(dev);
 }
 
 void
