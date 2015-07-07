@@ -15,6 +15,7 @@
 #include <sys/inotify.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 #include <sys/wait.h>
 #include <syslog.h>
@@ -105,26 +106,12 @@ spawn_callback (char *action, Device *dev)
 {
 	int ret;
 	pid_t child_pid;
-	char *env[5];
+	char **env;
+	int env_count;
 
 	// No callback registered, we're done
 	if (!g_callback_cmd)
 		return 0;
-
-	env[0] = g_strdup_printf("LDM_ACTION=%s", action);
-	env[1] = g_strdup_printf("LDM_NODE=%s", dev->node);
-	env[2] = g_strdup_printf("LDM_MOUNTPOINT=%s", dev->mp);
-	env[3] = g_strdup_printf("LDM_FS=%s", dev->fs);
-	env[4] = NULL;
-
-	if (!env[0] || !env[1] || !env[2] || !env[3]) {
-		free(env[0]);
-		free(env[1]);
-		free(env[2]);
-		free(env[3]);
-
-		return 1;
-	}
 
 	child_pid = fork();
 
@@ -135,22 +122,29 @@ spawn_callback (char *action, Device *dev)
 		// Wait for the process to return
 		wait(&ret);
 
-		free(env[0]);
-		free(env[1]);
-		free(env[2]);
-		free(env[3]);
-
 		// Return the exit code or EXIT_FAILURE if something went wrong
 		return WIFEXITED(ret) ? WEXITSTATUS(ret) : EXIT_FAILURE;
 	}
 
+	env_count = g_strv_length(environ);
+	env = malloc((env_count + 5) * sizeof(char *));
+
+	if (!env)
+		return 0;
+
+	// Copy the parent's environment
+	for (int i = 0; i < env_count; i++)
+		env[i] = environ[i];
+
+	// Inject the ldm-specific variables
+	env[env_count]   = g_strdup_printf("LDM_ACTION=%s", action);
+	env[env_count+1] = g_strdup_printf("LDM_NODE=%s", dev->node);
+	env[env_count+2] = g_strdup_printf("LDM_MOUNTPOINT=%s", dev->mp);
+	env[env_count+3] = g_strdup_printf("LDM_FS=%s", dev->fs);
+	env[env_count+4] = NULL;
+
 	// Drop the root priviledges. Oh and the bass too.
 	if (setgid((__gid_t)g_gid) < 0 || setuid((__uid_t)g_uid) < 0) {
-		free(env[0]);
-		free(env[1]);
-		free(env[2]);
-		free(env[3]);
-
 		_Exit(EXIT_FAILURE);
 	}
 
@@ -550,7 +544,6 @@ on_udev_add (struct udev_device *udev)
 
 	dev = device_new(udev);
 	if (!dev) {
-		fprintf(stderr, "device_new()\n");
 		return;
 	}
 
