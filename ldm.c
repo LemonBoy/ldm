@@ -858,9 +858,10 @@ parse_mask (char *args, int *mask)
 
 		errno = 0;
 		tmp = strtoul(args, NULL, 8);
-		perror("strtoul");
-		if (errno)
+		if (errno) {
+			perror("strtoul");
 			return 0;
+		}
 	}
 
 	*mask = tmp;
