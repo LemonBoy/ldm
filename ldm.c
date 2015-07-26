@@ -405,8 +405,10 @@ device_get_mp (Device *dev, const char *base)
 		if (dir) {
 			// The directory is empty!
 			// Note for the reader : 'g_dir_read_name' omits '.' and '..'
-			if (!g_dir_read_name(dir))
+			if (!g_dir_read_name(dir)) {
+				g_dir_close(dir);
 				break;
+			}
 
 			g_dir_close(dir);
 		}
