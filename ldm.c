@@ -583,17 +583,9 @@ on_udev_remove (struct udev_device *udev)
 void
 on_udev_change (struct udev_device *udev)
 {
-	Device *dev;
-	const char *dev_node, *type;
+	const char *type;
 
-	dev_node = udev_device_get_devnode(udev);
-
-	dev = g_hash_table_lookup(g_dev_table, dev_node);
-	// Unmount the old media
-	if (dev && table_search_by_dev(g_mtab, dev)) {
-		if (device_unmount(dev))
-			g_hash_table_remove(g_dev_table, dev_node);
-	}
+	on_udev_remove(udev);
 
 	type = udev_get_prop(udev, "ID_TYPE");
 
@@ -606,8 +598,7 @@ on_udev_change (struct udev_device *udev)
 		return;
 	}
 
-	// Try to mount the new device if possible
-	device_mount(dev);
+	on_udev_add(udev);
 }
 
 void
