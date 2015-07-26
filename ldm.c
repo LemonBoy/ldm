@@ -442,9 +442,12 @@ device_mount (Device *dev)
 	if (!mp)
 		return 0;
 
-	if (mkdir(mp, 775) < 0) {
-		syslog(LOG_ERR, "Could not mkdir() the folder at %s (%s)", mp, strerror(errno));
-		return 0;
+	if (!g_file_test(mp, G_FILE_TEST_EXISTS)) {
+		// Create the mountpoint folder only if it's not already present
+		if (mkdir(mp, 775) < 0) {
+			syslog(LOG_ERR, "Could not mkdir() the folder at %s (%s)", mp, strerror(errno));
+			return 0;
+		}
 	}
 
 	// Set 'mp' as the mountpoint for the device
