@@ -6,7 +6,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 
-#define IPC_SOCKET  "/run/ldm.fifo"
+#define IPC_SOCKET  "/run/ldm.socket"
 
 void
 ipc_deinit (int fd)
@@ -29,14 +29,14 @@ ipc_init (int as_master)
 		return -1;
 	}
 
-	// Make sure that there are no leftovers
-	unlink (IPC_SOCKET);
-
 	memset(&so, 0, sizeof(struct sockaddr_un));
 	so.sun_family = AF_UNIX;
 	strncpy(so.sun_path, IPC_SOCKET, sizeof(so.sun_path));
 
 	if (as_master) {
+		// Make sure that there are no leftovers
+		unlink (IPC_SOCKET);
+
 		// The master waits for the slaves to connect
 		if (bind(sock, (struct sockaddr *)&so, sizeof(struct sockaddr_un)) < 0) {
 			perror("bind");
