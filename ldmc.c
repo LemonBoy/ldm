@@ -35,7 +35,7 @@ ipc_send (int fd, char type, char *arg)
 
 	if (!ipc_sendf(fd, fmt, opt)) {
 		fprintf(stderr, "Could not communicate with the daemon! Is ldm running?\n");
-		return EXIT_FAILURE;
+		return 0;
 	}
 
 	switch (type) {
