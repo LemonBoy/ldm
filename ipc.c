@@ -1,10 +1,11 @@
-#include <stdarg.h>
-#include <stdlib.h>
-#include <stdio.h>
 #include <fcntl.h>
-#include <unistd.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <unistd.h>
 
 #define IPC_SOCKET  "/run/ldm.socket"
 

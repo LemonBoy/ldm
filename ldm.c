@@ -144,7 +144,7 @@ spawn_callback (char *action, Device *dev)
 	env[env_count+4] = NULL;
 
 	// Drop the root priviledges. Oh and the bass too.
-	if (setgid((__gid_t)g_gid) < 0 || setuid((__uid_t)g_uid) < 0) {
+	if (setgid((gid_t)g_gid) < 0 || setuid((uid_t)g_uid) < 0) {
 		_Exit(EXIT_FAILURE);
 	}
 
@@ -494,7 +494,7 @@ device_mount (Device *dev)
 	mnt_free_context(ctx);
 
 	if (!(fs_quirks & OWNER_FIX)) {
-		if (chown(dev->mp, (__uid_t)g_uid, (__gid_t)g_gid) < 0) {
+		if (chown(dev->mp, (uid_t)g_uid, (gid_t)g_gid) < 0) {
 			syslog(LOG_ERR, "Cannot chown %s", dev->mp);
 			return 0;
 		}
