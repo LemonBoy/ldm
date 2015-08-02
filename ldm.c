@@ -8,6 +8,7 @@
 #include <libudev.h>
 #include <limits.h>
 #include <poll.h>
+#include <pwd.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -866,6 +867,32 @@ parse_mask (char *args, int *mask)
 }
 
 int
+map_user_to_id (char *username)
+{
+	struct passwd *pw;
+
+	errno = 0;
+	pw = getpwnam(username);
+
+	// The 'Return Value' section states that getpwnam() returns NULL "if the
+	// matching entry is not found or an error occurs. If an error occurs, errno
+	// is set appropriately"
+	if (!pw) {
+		if (errno)
+			perror("getpwnam");
+		else
+			fprintf(stderr, "Could not find any information about the user \"%s\"\n", username);
+
+		return 0;
+	}
+
+	g_gid = pw->pw_gid;
+	g_uid = pw->pw_uid;
+
+	return 1;
+}
+
+int
 main (int argc, char *argv[])
 {
 	struct udev *udev;
@@ -874,30 +901,27 @@ main (int argc, char *argv[])
 	const char *action;
 	struct pollfd	pollfd[4];  // udev / inotify watch / mtab / fifo
 	char *resolved;
-	int	opt;
-	int	daemon;
+	int	opt, got_u, daemon;
 	int	ino_fd, ipc_fd, fstab_fd, mtab_fd;
 	struct inotify_event event;
 
 	ino_fd = ipc_fd = fstab_fd = mtab_fd = -1;
 	daemon = 0;
-	g_uid	= -1;
-	g_gid	= -1;
+	got_u = 0;
 	g_callback_cmd = NULL;
 
 	g_mask.fmask = 0133;
 	g_mask.dmask = 0022;
 
-	while ((opt = getopt(argc, argv, "hdg:u:p:c:m:")) != -1) {
+	while ((opt = getopt(argc, argv, "hdu:p:c:m:")) != -1) {
 		switch (opt) {
 			case 'd':
 				daemon = 1;
 				break;
-			case 'g':
-				g_gid = (int)strtoul(optarg, NULL, 10);
-				break;
 			case 'u':
-				g_uid = (int)strtoul(optarg, NULL, 10);
+				if (!map_user_to_id(optarg))
+					return EXIT_FAILURE;
+				got_u = 1;
 				break;
 			case 'm':
 				{
@@ -930,10 +954,9 @@ main (int argc, char *argv[])
 			case 'h':
 				printf("ldm "VERSION_STR"\n");
 				printf("2011-2015 (C) The Lemon Man\n");
-				printf("%s [-d | -r | -g | -u | -p | -c | -m | -h]\n", argv[0]);
+				printf("%s [-d | -r | -u | -p | -c | -m | -h]\n", argv[0]);
 				printf("\t-d Run ldm as a daemon\n");
-				printf("\t-g Specify the gid\n");
-				printf("\t-u Specify the uid\n");
+				printf("\t-u Specify the user\n");
 				printf("\t-m Specify the umask or the fmask/dmask\n");
 				printf("\t-p Specify where to mount the devices\n");
 				printf("\t-c Specify the path to the script executed after mount/unmount events\n");
@@ -954,8 +977,8 @@ main (int argc, char *argv[])
 		return EXIT_SUCCESS;
 	}
 
-	if (g_uid < 0 || g_gid < 0) {
-		fprintf(stderr, "You must supply your gid/uid!\n");
+	if (!got_u) {
+		fprintf(stderr, "You must supply the user with the -u switch!\n");
 		return EXIT_FAILURE;
 	}
 

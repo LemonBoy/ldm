@@ -33,8 +33,8 @@ ldmc: ipc.o ldmc.o
 debug: ldm ldmc
 debug: CC += $(CFDEBUG)
 
-doc: README.pod
-	@pod2man --section=1 --center="ldm Manual" --name "ldm" --release="$(VERSION)" README.pod > ldm.1
+doc: ldm.pod ldmc.pod
+	@pod2man --section=1 --center="ldm Manual" --name "ldm" --release="$(VERSION)" ldm.pod > ldm.1
 	@pod2man --section=1 --center="ldmc Manual" --name "ldmc" --release="$(VERSION)" ldmc.pod > ldmc.1
 
 clean:
