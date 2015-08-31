@@ -274,7 +274,7 @@ fs_get_quirks (char *fs)
 		{ "exfat",  OWNER_FIX },
 		{ "ntfs",   OWNER_FIX | UTF8_FLAG | MASK },
 		{ "iso9660",OWNER_FIX | UTF8_FLAG | RO },
-		{ "udf",    OWNER_FIX },
+		{ "udf",    OWNER_FIX | RO },
 	};
 
 	for (int i = 0; i < sizeof(fs_table)/sizeof(FsQuirk); i++) {
