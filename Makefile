@@ -25,7 +25,7 @@ all: ldm ldmc doc
 	$(CC) $(CFLAGS) `pkg-config --cflags $(LIBS)` -o $@ -c $<
 
 ldm: ipc.o ldm.o
-	$(CC) $(LDFLAGS) -o ldm ipc.o ldm.o
+	$(CC) $(LDFLAGS) -o ldm ipc.o ldm.o -ludev -lmount -lglib-2.0
 
 ldmc: ipc.o ldmc.o
 	$(CC) $(LDFLAGS) -o ldmc ipc.o ldmc.o
