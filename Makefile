@@ -25,10 +25,10 @@ all: ldm ldmc doc
 	$(CC) $(CFLAGS) `pkg-config --cflags $(LIBS)` -o $@ -c $<
 
 ldm: ipc.o ldm.o
-	$(CC) $(LDFLAGS) -o ldm ipc.o ldm.o
+	$(CC) -o ldm ipc.o ldm.o $(LDFLAGS)
 
 ldmc: ipc.o ldmc.o
-	$(CC) $(LDFLAGS) -o ldmc ipc.o ldmc.o
+	$(CC) -o ldmc ipc.o ldmc.o $(LDFLAGS)
 
 debug: ldm ldmc
 debug: CC += $(CFDEBUG)
