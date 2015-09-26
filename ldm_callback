@@ -24,8 +24,8 @@ case "$LDM_ACTION" in
         ;;
     mount)
         case "$LDM_MOUNTPOINT" in
-            # ** Automatic backuo when appropriate media is inserted
-            *backup-0mark-sd)
+            # ** Automatic backup when appropriate media is inserted
+            *MEEPMEEP)
                 sudo /opt/bin/rdbks "$LDM_MOUNTPOINT"
             ;;
         esac

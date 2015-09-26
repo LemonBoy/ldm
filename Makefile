@@ -5,8 +5,9 @@ CFDEBUG = -g3 -pedantic -Wall -Wunused-parameter -Wlong-long
 CFDEBUG += -Wsign-conversion -Wconversion -Wimplicit-function-declaration
 
 PREFIX ?= /usr/local
+ETCPREFIX ?= /etc
 BINDIR ?= $(PREFIX)/bin
-SYSTEMDDIR ?= $(PREFIX)/lib/systemd
+LIBDIR ?= $(PREFIX)/lib
 
 EXEC = ldm
 SRCS = ldm.c
@@ -37,9 +38,13 @@ install-main: ldm doc
 	install -D -m 644 ldm.1 $(DESTDIR)$(PREFIX)/share/man/man1/ldm.1
 
 install-systemd: ldm.service
-	install -D -m 644 ldm.service $(DESTDIR)$(SYSTEMDDIR)/system/ldm.service
+	install -D -m 644 ldm.service $(DESTDIR)$(LIBDIR)/systemd/system/ldm.service
 
-install: all install-main install-systemd
+install-debian-sysv: ldm.service
+	install -D -m 644 ldm-sysv-debian $(DESTDIR)$(ETCDIR)/init.d/ldm
+	echo 'OPTIONS="-u 1000 -g 1000 -d -p /media"' > $(DESTDIR)$(ETCDIR)/default/ldm
+
+install: all install-main
 
 uninstall:
 	$(RM) $(DESTDIR)$(BINDIR)/ldm
