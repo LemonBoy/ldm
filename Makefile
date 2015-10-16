@@ -6,7 +6,7 @@ CFDEBUG += -Wsign-conversion -Wconversion -Wimplicit-function-declaration
 
 PREFIX ?= /usr/local
 ETCPREFIX ?= /etc
-BINDIR ?= $(PREFIX)/bin
+BINDIR ?= $(PREFIX)/sbin
 LIBDIR ?= $(PREFIX)/lib
 
 EXEC = ldm
