@@ -15,6 +15,8 @@
 #include <libmount/libmount.h>
 #include <errno.h>
 #include <dirent.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #define VERSION_STR "0.5.1"
 
@@ -510,6 +512,12 @@ device_mount (struct udev_device *dev)
     char *p;
     int quirks;
 
+    device = device_search((char *)udev_device_get_devnode(dev));
+    if(device) {
+        syslog(LOG_ERR, "Couldn't make up a mountpoint name. Please report this bug.");
+        return 0;
+    }
+
     device = device_new(dev);
 
     if (!device)
@@ -551,10 +559,21 @@ device_mount (struct udev_device *dev)
         mnt_context_set_mflags(ctx, MS_RDONLY);
 
     if (mnt_context_mount(ctx)) {
-        syslog(LOG_ERR, "Error while mounting %s (%s)", device->rnode, strerror(errno));
-        mnt_free_context(ctx);
-        device_unmount(dev);
-        return 0;
+        if(errno==30) {
+            mnt_reset_context(ctx);
+            mnt_context_set_fstype(ctx, device->filesystem);
+            mnt_context_set_source(ctx, device->rnode);
+            mnt_context_set_target(ctx, device->mountpoint);
+            mnt_context_set_options(ctx, opt_fmt);
+            mnt_context_set_mflags(ctx, MS_RDONLY);
+        }
+        if(errno!=30 || mnt_context_mount(ctx)) {
+            syslog(LOG_ERR, "Error while mounting %s (%s)", device->rnode, strerror(errno));
+            mnt_free_context(ctx);
+            device_unmount(dev);
+
+            return 0;
+        }
     }
 
     mnt_free_context(ctx);

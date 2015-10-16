@@ -1,0 +1,79 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          ldm
+# Required-Start:    $remote_fs $syslog
+# Required-Stop:     $remote_fs $syslog
+# X-Start-Before:    kdm gdm3 xdm lightdm
+# X-Stop-After:      kdm gdm3 xdm lightdm
+# Default-Start:     2 3 4 5
+# Default-Stop:
+# Short-Description: Start ldm
+### END INIT INFO
+
+set -e
+
+LDM="/usr/local/sbin/ldm"
+DEFAULTS="/etc/default/ldm"
+
+# Check for daemon presence
+[ -x "$LDM" ] || exit 0
+
+OPTIONS="-g 1000 -u 1000 -d"
+MODULES=""
+# Include ldm defaults if available
+[ -r "$DEFAULTS" ] && . "$DEFAULTS"
+
+# Get lsb functions
+. /lib/lsb/init-functions
+
+# As the name says. If the kernel supports modules, it'll try to load
+# the ones listed in "MODULES".
+load_modules() {
+    [ -f /proc/modules ] || return 0
+    if [ "$MODULES" = "all" ]; then
+        MODULES="$(sed -rn 's#^(/lib/modules/[^/]+/)?kernel/(drivers|ubuntu)/acpi/([^/]+/)*(.*)\.ko:.*#\4#p' "/lib/modules/$(uname -r)/modules.dep")"
+    fi
+
+    if [ -z "$MODULES" ]; then
+        return
+    fi
+
+    log_begin_msg "Loading ACPI kernel modules..."
+    # work around a bug in initramfs which leaks this env var Launchpad #291619
+    # and a bug in modprobe --all --quiet which doesn't load all modules and
+    # exits with non-zero exit status Debian #504088
+    unset MODPROBE_OPTIONS
+    modprobe --all --use-blacklist $MODULES 2>/dev/null
+    log_end_msg $?
+}
+
+case "$1" in
+  start)
+    load_modules || true
+    log_begin_msg "Starting ldm"
+    start-stop-daemon --start --quiet --oknodo --exec "$LDM" -- $OPTIONS
+    log_end_msg $?
+    ;;
+  stop)
+    log_begin_msg "Stopping ldm"
+    start-stop-daemon --stop --quiet --oknodo --retry 2 --exec "$LDM"
+    log_end_msg $?
+    ;;
+  restart)
+    $0 stop
+    sleep 1
+    $0 start
+    ;;
+  #reload|force-reload) 
+    #log_begin_msg "Reloading ACPI services..."
+    #start-stop-daemon --stop --signal 1 --exec "$ACPID"
+    #log_end_msg $?
+    #;;
+  status)
+    status_of_proc "$ACPID" acpid
+    ;;
+  *)
+    log_success_msg "Usage: /etc/init.d/acpid {start|stop|restart|reload|force-reload|status}"
+    exit 1
+esac
+
