@@ -490,7 +490,11 @@ device_mount (Device *dev)
 		mnt_context_set_mflags(ctx, MS_RDONLY);
 
 	if (mnt_context_mount(ctx)) {
-		syslog(LOG_ERR, "Error while mounting %s (%s)", dev->node, strerror(errno));
+		int syserr = mnt_context_get_syscall_errno(ctx);
+
+		syslog(LOG_ERR, "Error while mounting %s (%s)", dev->node,
+		       syserr? strerror(syserr): "Unknown error");
+
 		mnt_free_context(ctx);
 		rmdir(dev->mp);
 		return 0;
@@ -522,9 +526,15 @@ device_unmount (Device *dev)
 	if (table_search_by_dev(g_mtab, dev)) {
 		ctx = mnt_new_context();
 		mnt_context_set_target(ctx, dev->node);
+
 		if (mnt_context_umount(ctx)) {
-			syslog(LOG_ERR, "Error while unmounting %s (%s)", dev->node, strerror(errno));
+			int syserr = mnt_context_get_syscall_errno(ctx);
+
+			syslog(LOG_ERR, "Error while unmounting %s (%s)", dev->node,
+			       syserr? strerror(syserr): "Unknown error");
+
 			mnt_free_context(ctx);
+
 			return 0;
 		}
 		mnt_free_context(ctx);
