@@ -475,6 +475,10 @@ device_mount (Device *dev)
 		*p = '\0';
 	}
 
+	// Take a deep breath and don't panic!
+	// The buffer is big enough to accomodate the content.
+	strcat(opt_fmt, "uhelper=ldm,");
+
 	ctx = mnt_new_context();
 
 	mnt_context_set_fstype(ctx, dev->fs);

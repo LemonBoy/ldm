@@ -80,11 +80,14 @@ main (int argc, char **argv)
 {
 	int opt;
 	int ipc_fd;
+	int ret;
 
 	if (argc == 1) {
 		usage ();
 		return EXIT_FAILURE;
 	}
+
+	ret = EXIT_SUCCESS;
 
 	while ((opt = getopt(argc, argv, "hlr:")) != -1) {
 		switch (opt) {
@@ -96,7 +99,9 @@ main (int argc, char **argv)
 				if (ipc_fd < 0)
 					return EXIT_FAILURE;
 
-				ipc_send(ipc_fd, (char)opt, optarg);
+				// Propagate the error code to the exit status
+				if (!ipc_send(ipc_fd, (char)opt, optarg))
+					ret = EXIT_FAILURE;
 
 				close(ipc_fd);
 				break;
@@ -107,5 +112,5 @@ main (int argc, char **argv)
 		}
 	}
 
-	return EXIT_SUCCESS;
+	return ret;
 }

@@ -46,6 +46,7 @@ mrproper: clean
 install-main: ldm doc
 	install -D -m 755 ldm $(DESTDIR)$(BINDIR)/ldm
 	install -D -m 755 ldmc $(DESTDIR)$(BINDIR)/ldmc
+	install -D -m 755 umount.ldm $(DESTDIR)$(BINDIR)/umount.ldm
 	install -D -m 644 ldm.1 $(DESTDIR)/usr/share/man/man1/ldm.1
 	install -D -m 644 ldmc.1 $(DESTDIR)/usr/share/man/man1/ldmc.1
 
@@ -57,6 +58,7 @@ install: all install-main install-systemd
 uninstall:
 	$(RM) $(DESTDIR)$(BINDIR)/ldm
 	$(RM) $(DESTDIR)$(BINDIR)/ldmc
+	$(RM) $(DESTDIR)$(BINDIR)/umount.ldm
 	$(RM) $(DESTDIR)/usr/share/man/man1/ldm.1
 	$(RM) $(DESTDIR)/usr/share/man/man1/ldmc.1
 	$(RM) $(DESTDIR)$(SYSTEMDDIR)/system/ldm.service

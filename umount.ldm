@@ -1,0 +1,12 @@
+#!/bin/sh
+# Little script to provide compatibility with umount, it currently doesn't
+# handle any flag but that's fine.
+
+if [ $# -lt 1 ]; then
+        exit 1
+fi
+
+# Use ldmc to talk with the daemon
+ldmc -r "$1" 2>&1 > /dev/null
+
+# vim: ft=sh:
