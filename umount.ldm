@@ -7,6 +7,6 @@ if [ $# -lt 1 ]; then
 fi
 
 # Use ldmc to talk with the daemon
-ldmc -r "$1" 2>&1 > /dev/null
+ldmc -r "$1"
 
 # vim: ft=sh:

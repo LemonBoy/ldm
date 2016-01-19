@@ -9,7 +9,8 @@ I<ldm> [-d] [-u I<user>] [-p I<path>] [-c I<command>] [-m I<mask>] [-h]
 =head1 DESCRIPTION
 
 ldm is a lightweight device mounter following the UNIX philosophy written in C and based on udev and libmount.
-The daemon can be controlled with B<ldmc>.
+The user can use B<umount> to unmount the device or B<ldmc> with the B<-r> switch.
+The daemon can be controlled with the B<ldmc> tool.
 
 =head1 OPTIONS
 
@@ -100,7 +101,7 @@ BASE_MOUNTPOINT=<i>/mnt</i>
 
 =head1 SEE ALSO
 
-ldmc(1)
+ldmc(1), umount(8)
 
 =head1 WWW
 
