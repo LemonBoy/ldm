@@ -309,8 +309,6 @@ mnt_context_rc_value (struct libmnt_context *ctx, int rc)
 	return 1;
 }
 
-
-
 int
 device_find_predicate (char *key, Device *value, char *what)
 {
@@ -324,6 +322,7 @@ device_find_predicate (char *key, Device *value, char *what)
 
 	return 0;
 }
+
 // Path is either the /dev/ node or the mountpoint
 Device *
 device_search (const char *path)
