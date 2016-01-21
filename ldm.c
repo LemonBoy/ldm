@@ -281,8 +281,36 @@ fs_get_quirks (char *fs)
 		if (!strcmp(fs_table[i].name, fs))
 			return fs_table[i].quirks;
 	}
+
 	return NONE;
 }
+
+int
+mnt_context_rc_value (struct libmnt_context *ctx, int rc)
+{
+	// Return the /sbin/umount.<type> helper return code.
+	if (mnt_context_helper_executed(ctx)) {
+		int helper_rc = mnt_context_get_helper_status(ctx);
+		syslog(LOG_INFO, "Mount helper returned code %d", helper_rc);
+		return (helper_rc != 0);
+	}
+
+	// The library and the syscall succeeded just fine.
+	if (!rc && mnt_context_get_status(ctx) == 1)
+		return 0;
+
+	if (!mnt_context_syscall_called(ctx))
+		syslog(LOG_ERR, "Error in libmount (rc = %d)", rc);
+	else {
+		int syscall_errno = mnt_context_get_syscall_errno(ctx);
+		syslog(LOG_ERR, "Error in syscall (%s)", syscall_errno?
+		       strerror(syscall_errno): "Generic error");
+	}
+
+	return 1;
+}
+
+
 
 int
 device_find_predicate (char *key, Device *value, char *what)
@@ -386,8 +414,8 @@ device_get_mp (Device *dev, const char *base)
 
 	// Use the first non-null field
 	unique = first_nonnull(udev_get_prop(dev->dev, "ID_FS_LABEL"),
-	                       udev_get_prop(dev->dev, "ID_FS_UUID"),
-	                       udev_get_prop(dev->dev, "ID_SERIAL"));
+			       udev_get_prop(dev->dev, "ID_FS_UUID"),
+			       udev_get_prop(dev->dev, "ID_SERIAL"));
 
 	if (!unique)
 		return NULL;
@@ -429,6 +457,7 @@ device_mount (Device *dev)
 	char opt_fmt[256] = {0};
 	struct libmnt_context *ctx;
 	struct libmnt_fs *fstab;
+	int rc;
 
 	if (!dev)
 		return 0;
@@ -489,11 +518,11 @@ device_mount (Device *dev)
 	if (fs_quirks & RO)
 		mnt_context_set_mflags(ctx, MS_RDONLY);
 
-	if (mnt_context_mount(ctx)) {
-		int syserr = mnt_context_get_syscall_errno(ctx);
+	rc = mnt_context_mount(ctx);
+	rc = mnt_context_rc_value(ctx, rc);
 
-		syslog(LOG_ERR, "Error while mounting %s (%s)", dev->node,
-		       syserr? strerror(syserr): "Unknown error");
+	if (rc) {
+		syslog(LOG_ERR, "Error while mounting %s", dev->node);
 
 		mnt_free_context(ctx);
 		rmdir(dev->mp);
@@ -518,27 +547,28 @@ int
 device_unmount (Device *dev)
 {
 	struct libmnt_context *ctx;
+	int rc;
 
 	if (!dev)
 		return 0;
 
 	// Unmount the device if it is actually mounted
-	if (table_search_by_dev(g_mtab, dev)) {
-		ctx = mnt_new_context();
-		mnt_context_set_target(ctx, dev->node);
+	if (!table_search_by_dev(g_mtab, dev))
+		return 0;
 
-		if (mnt_context_umount(ctx)) {
-			int syserr = mnt_context_get_syscall_errno(ctx);
+	ctx = mnt_new_context();
+	mnt_context_set_target(ctx, dev->node);
 
-			syslog(LOG_ERR, "Error while unmounting %s (%s)", dev->node,
-			       syserr? strerror(syserr): "Unknown error");
+	rc = mnt_context_umount(ctx);
+	rc = mnt_context_rc_value(ctx, rc);
 
-			mnt_free_context(ctx);
+	if (rc) {
+		syslog(LOG_ERR, "Error while unmounting %s", dev->node);
 
-			return 0;
-		}
 		mnt_free_context(ctx);
+		return 0;
 	}
+	mnt_free_context(ctx);
 
 	rmdir(dev->mp);
 
@@ -915,8 +945,8 @@ main (int argc, char *argv[])
 	const char *action;
 	struct pollfd	pollfd[4];  // udev / inotify watch / mtab / fifo
 	char *resolved;
-	int	opt, got_u, daemon;
-	int	ino_fd, ipc_fd, fstab_fd, mtab_fd;
+	int opt, got_u, daemon;
+	int ino_fd, ipc_fd, fstab_fd, mtab_fd;
 	struct inotify_event event;
 
 	ino_fd = ipc_fd = fstab_fd = mtab_fd = -1;
