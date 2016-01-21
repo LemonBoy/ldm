@@ -13,7 +13,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/inotify.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -943,13 +942,12 @@ main (int argc, char *argv[])
 	struct udev_monitor *monitor;
 	struct udev_device *device;
 	const char *action;
-	struct pollfd	pollfd[4];  // udev / inotify watch / mtab / fifo
+	struct pollfd pollfd[3];  // udev /  mtab / fifo
 	char *resolved;
 	int opt, got_u, daemon;
-	int ino_fd, ipc_fd, fstab_fd, mtab_fd;
-	struct inotify_event event;
+	int ipc_fd, mtab_fd;
 
-	ino_fd = ipc_fd = fstab_fd = mtab_fd = -1;
+	ipc_fd = mtab_fd = -1;
 	daemon = 0;
 	got_u = 0;
 	g_callback_cmd = NULL;
@@ -1055,17 +1053,6 @@ main (int argc, char *argv[])
 		return EXIT_FAILURE;
 	}
 
-	ino_fd = inotify_init();
-
-	if (ino_fd < 0) {
-		perror("inotify_init");
-
-		free(g_callback_cmd);
-		free(g_mount_path);
-
-		return EXIT_FAILURE;
-	}
-
 	// Create the ipc socket
 	umask(0);
 
@@ -1119,13 +1106,7 @@ main (int argc, char *argv[])
 	g_mtab = mnt_new_table_from_file(MTAB_PATH);
 
 	// Setup the fd to poll
-	fstab_fd = inotify_add_watch(ino_fd, FSTAB_PATH, IN_CLOSE_WRITE);
-	if (fstab_fd < 0) {
-		perror("inotify_add_watch");
-		goto cleanup;
-	}
-
-	mtab_fd = open(MTAB_PATH, O_RDONLY | O_NONBLOCK);
+	mtab_fd = open(MTAB_PATH, O_RDONLY);
 	if (mtab_fd < 0) {
 		perror("open");
 		goto cleanup;
@@ -1144,21 +1125,18 @@ main (int argc, char *argv[])
 	pollfd[0].fd = udev_monitor_get_fd(monitor);
 	pollfd[0].events = POLLIN;
 
-	pollfd[1].fd = ino_fd;
-	pollfd[1].events = POLLIN;
+	pollfd[1].fd = mtab_fd;
+	pollfd[1].events = 0;
 
-	pollfd[2].fd = mtab_fd;
-	pollfd[2].events = 0;
-
-	pollfd[3].fd = ipc_fd;
-	pollfd[3].events = POLLIN;
+	pollfd[2].fd = ipc_fd;
+	pollfd[2].events = POLLIN;
 
 	syslog(LOG_INFO, "Entering the main loop");
 
 	g_running = 1;
 
 	while (g_running) {
-		if (poll(pollfd, 4, -1) < 1)
+		if (poll(pollfd, 3, -1) < 1)
 			continue;
 
 		// Incoming message on udev socket
@@ -1182,21 +1160,12 @@ main (int argc, char *argv[])
 
 			udev_device_unref(device);
 		}
-		// Incoming message on inotify socket
-		if (pollfd[1].revents & POLLIN) {
-			read(ino_fd, &event, sizeof(struct inotify_event));
-
-			mnt_free_table(g_fstab);
-			g_fstab = mnt_new_table_from_file(MTAB_PATH);
-		}
 		// mtab change
-		if (pollfd[2].revents & POLLERR) {
-			read(mtab_fd, &event, sizeof(struct inotify_event));
-
+		if (pollfd[1].revents & POLLERR) {
 			on_mtab_change();
 		}
 		// client connection to the ipc socket
-		if (pollfd[3].revents & POLLIN) {
+		if (pollfd[2].revents & POLLIN) {
 			int client;
 
 			client = accept(ipc_fd, NULL, NULL);
@@ -1220,11 +1189,8 @@ cleanup:
 	free(g_mount_path);
 
 	// Do the cleanup
-	inotify_rm_watch(ino_fd, fstab_fd);
-
 	ipc_deinit (ipc_fd);
 
-	close(ino_fd);
 	close(mtab_fd);
 
 	unlink(LOCK_PATH);
