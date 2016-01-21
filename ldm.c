@@ -37,8 +37,8 @@ typedef enum {
 } Quirk;
 
 typedef struct {
-	int fmask;
-	int dmask;
+	unsigned long fmask;
+	unsigned long dmask;
 } Mask;
 
 typedef struct {
@@ -64,7 +64,8 @@ static struct libmnt_table *g_fstab;
 static struct libmnt_table *g_mtab;
 static FILE *g_lockfd;
 static int g_running;
-static int g_gid, g_uid;
+static gid_t g_gid;
+static uid_t g_uid;
 static char *g_mount_path;
 static char *g_callback_cmd;
 static Mask g_mask;
@@ -107,7 +108,7 @@ spawn_callback (char *action, Device *dev)
 	int ret;
 	pid_t child_pid;
 	char **env;
-	int env_count;
+	unsigned env_count;
 
 	// No callback registered, we're done
 	if (!g_callback_cmd)
@@ -144,7 +145,7 @@ spawn_callback (char *action, Device *dev)
 	env[env_count+4] = NULL;
 
 	// Drop the root priviledges. Oh and the bass too.
-	if (setgid((gid_t)g_gid) < 0 || setuid((uid_t)g_uid) < 0) {
+	if (setgid(g_gid) < 0 || setuid(g_uid) < 0) {
 		_Exit(EXIT_FAILURE);
 	}
 
@@ -497,7 +498,7 @@ device_mount (Device *dev)
 		if (fs_quirks & FLUSH)
 			p += sprintf(p, "flush,");
 		if (fs_quirks & MASK)
-			p += sprintf(p, "dmask=%04o,fmask=%04o,", g_mask.dmask, g_mask.fmask);
+			p += sprintf(p, "dmask=%04lo,fmask=%04lo,", g_mask.dmask, g_mask.fmask);
 
 		*p = '\0';
 	}
@@ -530,7 +531,7 @@ device_mount (Device *dev)
 	mnt_free_context(ctx);
 
 	if (!(fs_quirks & OWNER_FIX)) {
-		if (chown(dev->mp, (uid_t)g_uid, (gid_t)g_gid) < 0) {
+		if (chown(dev->mp, g_uid, g_gid) < 0) {
 			syslog(LOG_ERR, "Cannot chown %s", dev->mp);
 			return 0;
 		}
@@ -870,7 +871,7 @@ void device_clear_list () {
 }
 
 int
-parse_mask (char *args, int *mask)
+parse_mask (char *args, unsigned long *mask)
 {
 	unsigned long tmp;
 
@@ -903,7 +904,7 @@ parse_mask (char *args, int *mask)
 		}
 	}
 
-	*mask = tmp;
+	*mask = (unsigned)tmp;
 
 	return 1;
 }

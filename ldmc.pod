@@ -42,4 +42,4 @@ L<git repository|https://github.com/LemonBoy/ldm>
 
 =head1 AUTHOR
 
-2011-2015 (C) The Lemon Man <thatlemon@gmail.com>
+2011-2016 (C) The Lemon Man <thatlemon@gmail.com>
