@@ -551,9 +551,13 @@ device_unmount (Device *dev)
 	if (!dev)
 		return 0;
 
+        syslog(LOG_ERR, "SEARCHING...");
+
 	// Unmount the device if it is actually mounted
 	if (!table_search_by_dev(g_mtab, dev))
 		return 0;
+
+        syslog(LOG_ERR, "FOUND!");
 
 	ctx = mnt_new_context();
 	mnt_context_set_target(ctx, dev->node);
@@ -802,6 +806,7 @@ ipc_serve (int client)
 
 	switch (msg_buffer[0]) {
 		case 'R': { // Remove a mounted device
+                        syslog(LOG_INFO, "R %s", msg_buffer);
 			// Resolve the user-provided path
 			char *res = realpath(msg_buffer + 1, NULL);
 
@@ -811,8 +816,12 @@ ipc_serve (int client)
 				return 0;
 			}
 
+                        syslog(LOG_INFO, "Realpath = %s", res);
+
 			Device *dev = device_search(res);
 			free(res);
+
+                        syslog(LOG_INFO, "Dev is %p", dev);
 
 			int ok = 0;
 			// We don't have to check whether the device is mounted here since device_unmount takes care
@@ -824,6 +833,8 @@ ipc_serve (int client)
 					g_hash_table_remove(g_dev_table, ht_key);
 					ok = 1;
 				}
+
+                                syslog(LOG_ERR, "device_umount = %d", ok);
 			}
 
 			// Send the response back
@@ -1126,7 +1137,7 @@ main (int argc, char *argv[])
 	pollfd[0].events = POLLIN;
 
 	pollfd[1].fd = mtab_fd;
-	pollfd[1].events = 0;
+	pollfd[1].events = POLLERR | POLLPRI;
 
 	pollfd[2].fd = ipc_fd;
 	pollfd[2].events = POLLIN;
@@ -1148,6 +1159,8 @@ main (int argc, char *argv[])
 
 			action = udev_device_get_action(device);
 
+			syslog(LOG_ERR, "ACTION %s", action);
+
 			if (!strcmp(action, "add")) {
 				on_udev_add(device);
 			}
@@ -1162,6 +1175,7 @@ main (int argc, char *argv[])
 		}
 		// mtab change
 		if (pollfd[1].revents & POLLERR) {
+			syslog(LOG_ERR, "MTAB...");
 			on_mtab_change();
 		}
 		// client connection to the ipc socket
