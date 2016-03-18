@@ -555,6 +555,8 @@ device_unmount (Device *dev)
 	if (!table_search_by_dev(g_mtab, dev))
 		return 0;
 
+	(void)spawn_callback("pre_unmount", dev);
+
 	ctx = mnt_new_context();
 	mnt_context_set_target(ctx, dev->node);
 

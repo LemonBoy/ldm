@@ -56,7 +56,7 @@ The filesystem on the mounted device.
 
 =item B<LDM_ACTION>
 
-The action ldm has just performed, it can either be I<mount> or I<unmount>
+The action ldm has just performed, it can either be I<mount>, I<pre_unmount> or I<unmount>
 
 =back
 
