@@ -997,7 +997,7 @@ main (int argc, char *argv[])
 				break;
 			case 'h':
 				printf("ldm "VERSION_STR"\n");
-				printf("2011-2015 (C) The Lemon Man\n");
+				printf("2011-2016 (C) The Lemon Man\n");
 				printf("%s [-d | -r | -u | -p | -c | -m | -h]\n", argv[0]);
 				printf("\t-d Run ldm as a daemon\n");
 				printf("\t-u Specify the user\n");
@@ -1039,7 +1039,11 @@ main (int argc, char *argv[])
 	// Resolve the mount point path before using it
 	resolved = realpath(g_mount_path, NULL);
 	if (!resolved) {
-		perror("realpath()");
+		// Print a nice warning if the path doesn't exist
+		if (errno == ENOENT)
+		    fprintf(stderr, "The path \"%s\" doesn't name an existing folder!\n", g_mount_path);
+		else
+		    perror("realpath()");
 		return EXIT_FAILURE;
 	}
 	free(g_mount_path);
@@ -1047,7 +1051,7 @@ main (int argc, char *argv[])
 
 	// Check anyways
 	if (!g_file_test(g_mount_path, G_FILE_TEST_IS_DIR)) {
-		fprintf(stderr, "The path %s doesn't name a folder or doesn't exist!\n", g_mount_path);
+		fprintf(stderr, "The path \"%s\" doesn't name a folder or doesn't exist!\n", g_mount_path);
 
 		free(g_callback_cmd);
 		free(g_mount_path);
