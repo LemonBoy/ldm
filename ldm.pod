@@ -82,6 +82,7 @@ The included systemd service expects a config file at /etc/ldm.conf similar to t
 .BB lightgray
 MOUNT_OWNER=\fIusername\fR
 BASE_MOUNTPOINT=\fI/mnt\fR
+FMASK_DMASK=\fIfmask,dmask\fR
 .EB lightgray
 .fi
 .RE
@@ -94,6 +95,7 @@ BASE_MOUNTPOINT=\fI/mnt\fR
 <code>
 MOUNT_OWNER=<i>username</i>
 BASE_MOUNTPOINT=<i>/mnt</i>
+FMASK_DMASK=<i>fmask,dmask</i>
 </code>
 </pre>
 
