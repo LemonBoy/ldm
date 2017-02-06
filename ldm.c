@@ -514,7 +514,7 @@ device_mount (Device *dev)
 	mnt_context_set_target(ctx, dev->mp);
 	mnt_context_set_options(ctx, opt_fmt);
 
-	if (fs_quirks & RO)
+	if (fs_quirks & RO || udev_get_prop(dev->dev, "ID_CDROM"))
 		mnt_context_set_mflags(ctx, MS_RDONLY);
 
 	rc = mnt_context_mount(ctx);
