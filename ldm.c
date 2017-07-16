@@ -997,7 +997,7 @@ main (int argc, char *argv[])
 				break;
 			case 'h':
 				printf("ldm "VERSION_STR"\n");
-				printf("2011-2016 (C) The Lemon Man\n");
+				printf("2011-2017 (C) The Lemon Man\n");
 				printf("%s [-d | -r | -u | -p | -c | -m | -h]\n", argv[0]);
 				printf("\t-d Run ldm as a daemon\n");
 				printf("\t-u Specify the user\n");

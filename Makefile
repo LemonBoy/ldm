@@ -33,12 +33,15 @@ ldmc: ipc.o ldmc.o
 debug: ldm ldmc
 debug: CC += $(CFDEBUG)
 
+service:
+	@sed "s|@@BINDIR@@|$(BINDIR)|" ldm.service.in > ldm.service
+
 doc: ldm.pod ldmc.pod
 	@pod2man --section=1 --center="ldm Manual" --name "ldm" --release="$(VERSION)" ldm.pod > ldm.1
 	@pod2man --section=1 --center="ldmc Manual" --name "ldmc" --release="$(VERSION)" ldmc.pod > ldmc.1
 
 clean:
-	$(RM) *.o *.1 ldm ldmc
+	$(RM) *.o *.1 ldm ldmc ldm.service
 
 mrproper: clean
 	$(RM) ldm ldmc
@@ -50,7 +53,7 @@ install-main: ldm doc
 	install -D -m 644 ldm.1 $(DESTDIR)/usr/share/man/man1/ldm.1
 	install -D -m 644 ldmc.1 $(DESTDIR)/usr/share/man/man1/ldmc.1
 
-install-systemd: ldm.service
+install-systemd: service
 	install -D -m 644 ldm.service $(DESTDIR)$(SYSTEMDDIR)/system/ldm.service
 
 install: all install-main install-systemd
@@ -63,4 +66,4 @@ uninstall:
 	$(RM) $(DESTDIR)/usr/share/man/man1/ldmc.1
 	$(RM) $(DESTDIR)$(SYSTEMDDIR)/system/ldm.service
 
-.PHONY: all debug clean mrproper install install-main install-systemd uninstall
+.PHONY: all debug clean mrproper install install-main install-systemd uninstall service
