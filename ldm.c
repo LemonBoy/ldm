@@ -70,7 +70,15 @@ static char *g_callback_cmd;
 static Mask g_mask;
 static GHashTable *g_dev_table;
 
-#define first_nonnull(a,b,c) ((a) ? (a) : ((b) ? (b) : ((c) ? (c) : NULL)))
+// Return the first non-NULL element among {a,b,c} or NULL
+// The values are evaluated only once and only if needed
+#define first_nonnull(a,b,c) \
+	({ __typeof__ (a) _a = (a);  \
+	   __typeof__ (b) _b = NULL; \
+	   __typeof__ (c) _c = NULL; \
+	   if (!_a)        _b = (b); \
+	   if (!_a && !_b) _c = (c); \
+	   _a ? _a : (_b ? _b : _c); })
 
 char *
 udev_get_prop (struct udev_device *dev, char *key)
