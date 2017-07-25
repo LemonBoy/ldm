@@ -84,7 +84,7 @@ char *
 udev_get_prop (struct udev_device *dev, char *key)
 {
 	const char *value = udev_device_get_property_value(dev, key);
-	return value? (char *)value: NULL;
+	return (char *)value;
 }
 
 int
@@ -212,24 +212,13 @@ table_search_by_str (struct libmnt_table *tbl, int type, char *str)
 struct libmnt_fs *
 table_search_by_dev (struct libmnt_table *tbl, Device *dev)
 {
-	struct libmnt_fs *fs;
-
-	// Try to match the dev node
-	fs = table_search_by_str(tbl, NODE, dev->node);
-	if (fs)
-		return fs;
-
-	// Try to match the uuid
-	fs = table_search_by_str(tbl, UUID, udev_get_prop(dev->dev, "ID_FS_UUID"));
-	if (fs)
-		return fs;
-
-	// Try to match the label
-	fs = table_search_by_str(tbl, LABEL, udev_get_prop(dev->dev, "ID_FS_LABEL"));
-	if (fs)
-		return fs;
-
-	return NULL;
+	// Try to find a match against the device node name, the uuid and the
+	// label in this order
+	return first_nonnull(
+		table_search_by_str(tbl, NODE, dev->node),
+		table_search_by_str(tbl, UUID, udev_get_prop(dev->dev, "ID_FS_UUID")),
+		table_search_by_str(tbl, LABEL, udev_get_prop(dev->dev, "ID_FS_LABEL"))
+	);
 }
 
 struct libmnt_fs *
@@ -239,24 +228,16 @@ table_search_by_udev (struct libmnt_table *tbl, struct udev_device *udev)
 	char *resolved;
 
 	resolved = mnt_resolve_path(udev_device_get_devnode(udev), NULL);
-	// Try to match the resolved dev node
-	fs = table_search_by_str(tbl, NODE, resolved);
+
+	fs = first_nonnull(
+		table_search_by_str(tbl, NODE, resolved),
+		table_search_by_str(tbl, UUID, udev_get_prop(udev, "ID_FS_UUID")),
+		table_search_by_str(tbl, LABEL, udev_get_prop(udev, "ID_FS_LABEL"))
+	);
+
 	free(resolved);
 
-	if (fs)
-		return fs;
-
-	// Try to match the uuid
-	fs = table_search_by_str(tbl, UUID, udev_get_prop(udev, "ID_FS_UUID"));
-	if (fs)
-		return fs;
-
-	// Try to match the label
-	fs = table_search_by_str(tbl, LABEL, udev_get_prop(udev, "ID_FS_LABEL"));
-	if (fs)
-		return fs;
-
-	return NULL;
+	return fs;
 }
 
 int
@@ -394,19 +375,17 @@ device_new (struct udev_device *udev)
 	if (udev_get_prop(udev, "ID_CDROM") && !udev_prop_true(udev, "ID_CDROM_MEDIA"))
 		return NULL;
 
-	if (!strcmp(dev_fs_usage, "filesystem")) {
-		dev = calloc(1, sizeof(Device));
+	if (strcmp(dev_fs_usage, "filesystem"))
+		return NULL;
 
-		dev->type = VOLUME;
-		dev->dev = udev;
-		dev->node = mnt_resolve_path(dev_node, NULL);
-		dev->fs = strdup(dev_fs);
+	dev = calloc(1, sizeof(Device));
 
-		udev_device_ref(udev);
-	}
-	else {
-		dev = NULL;
-	}
+	dev->type = VOLUME;
+	dev->dev = udev;
+	dev->node = mnt_resolve_path(dev_node, NULL);
+	dev->fs = strdup(dev_fs);
+
+	udev_device_ref(udev);
 
 	return dev;
 }
@@ -645,9 +624,8 @@ on_udev_change (struct udev_device *udev)
 
 	type = udev_get_prop(udev, "ID_TYPE");
 
-	if (!type) {
+	if (!type)
 		return;
-	}
 
 	// Exit if there's no optical media
 	if (!strcmp(type, "cd") && !udev_prop_true(udev, "ID_CDROM_MEDIA")) {
