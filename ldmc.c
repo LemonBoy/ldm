@@ -68,7 +68,7 @@ ipc_send (int fd, char type, char *arg)
 void
 usage ()
 {
-	printf("ldmc %s\n", VERSION_STR);
+	printf("ldmc "VERSION_STR"\n");
 	printf("2015-2017 (C) The Lemon Man\n");
 	printf("\t-r <path> Remove a mounted device\n");
 	printf("\t-l List the mounted devices\n");
