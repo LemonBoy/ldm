@@ -62,7 +62,6 @@ typedef struct {
 
 static struct libmnt_table *g_fstab;
 static struct libmnt_table *g_mtab;
-static FILE *g_lockfd;
 static int g_running;
 static gid_t g_gid;
 static uid_t g_uid;
@@ -92,11 +91,14 @@ udev_prop_true (struct udev_device *dev, char *key)
 int
 lock_create (int pid)
 {
-	g_lockfd = fopen(LOCK_PATH, "w+");
-	if (!g_lockfd)
+	FILE *fp;
+
+	fp = fopen(LOCK_PATH, "w+");
+	if (!fp)
 		return 0;
-	fprintf(g_lockfd, "%d", pid);
-	fclose(g_lockfd);
+	fprintf(fp, "%d", pid);
+	fclose(fp);
+
 	return 1;
 }
 
