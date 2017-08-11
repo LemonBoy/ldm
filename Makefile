@@ -1,4 +1,4 @@
-VERSION=v0.6
+VERSION=v0.7
 VERSION_GIT=$(shell test -d .git && git describe 2> /dev/null)
 
 ifneq "$(VERSION_GIT)" ""
