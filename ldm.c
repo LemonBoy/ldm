@@ -94,6 +94,13 @@ udev_prop_true (struct udev_device *dev, char *key)
 	return value && !strcmp(value, "1");
 }
 
+int
+udev_attr_true (struct udev_device *dev, char *key)
+{
+	const char *value = udev_device_get_sysattr_value(dev, key);
+	return value && !strcmp(value, "1");
+}
+
 // Locking functions
 
 int
@@ -333,6 +340,31 @@ device_search (const char *path)
 	return dev;
 }
 
+int
+device_has_media (struct udev_device *udev)
+{
+	const char *dev_node;
+	int fd;
+
+	if (!udev)
+		return 0;
+
+	// Fast path, the device always have something in it
+	if (!udev_attr_true(udev, "removable"))
+		return 1;
+
+	if (udev_get_prop(udev, "ID_CDROM"))
+		return udev_prop_true(udev, "ID_CDROM_MEDIA");
+
+	dev_node = udev_device_get_devnode(udev);
+	fd = open(dev_node, O_RDONLY);
+	if (fd < 0)
+		return 0;
+	close(fd);
+
+	return 1;
+}
+
 void
 device_free (Device *dev)
 {
@@ -364,15 +396,14 @@ device_new (struct udev_device *udev)
 	if (!udev)
 		return NULL;
 
+	if (!device_has_media(udev))
+		return NULL;
+
 	dev_node = udev_device_get_devnode(udev);
 	dev_fs = udev_get_prop(udev, "ID_FS_TYPE");
 	dev_fs_usage = udev_get_prop(udev, "ID_FS_USAGE");
 
 	if (!dev_fs || !dev_fs_usage)
-		return NULL;
-
-	// Avoid empty cd/dvd drives
-	if (udev_get_prop(udev, "ID_CDROM") && !udev_prop_true(udev, "ID_CDROM_MEDIA"))
 		return NULL;
 
 	if (strcmp(dev_fs_usage, "filesystem"))
@@ -627,10 +658,9 @@ on_udev_change (struct udev_device *udev)
 	if (!type)
 		return;
 
-	// Exit if there's no optical media
-	if (!strcmp(type, "cd") && !udev_prop_true(udev, "ID_CDROM_MEDIA")) {
+	// Exit if there's no media
+	if (!device_has_media(udev))
 		return;
-	}
 
 	on_udev_add(udev);
 }
