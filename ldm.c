@@ -81,21 +81,21 @@ static GHashTable *g_dev_table;
 	   _a ? _a : (_b ? _b : _c); })
 
 char *
-udev_get_prop (struct udev_device *dev, char *key)
+udev_get_prop (struct udev_device *dev, const char *key)
 {
 	const char *value = udev_device_get_property_value(dev, key);
 	return (char *)value;
 }
 
 int
-udev_prop_true (struct udev_device *dev, char *key)
+udev_prop_true (struct udev_device *dev, const char *key)
 {
 	const char *value = udev_device_get_property_value(dev, key);
 	return value && !strcmp(value, "1");
 }
 
 int
-udev_attr_true (struct udev_device *dev, char *key)
+udev_attr_true (struct udev_device *dev, const char *key)
 {
 	const char *value = udev_device_get_sysattr_value(dev, key);
 	return value && !strcmp(value, "1");
