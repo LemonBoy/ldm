@@ -1073,10 +1073,6 @@ main (int argc, char *argv[])
 		syslog(LOG_ERR, "Cannot create a new monitor");
 		goto cleanup;
 	}
-	if (udev_monitor_enable_receiving(monitor)) {
-		syslog(LOG_ERR, "Cannot enable receiving");
-		goto cleanup;
-	}
 	if (udev_monitor_filter_add_match_subsystem_devtype(monitor, "block", NULL)) {
 		syslog(LOG_ERR, "Cannot set the filter");
 		goto cleanup;
@@ -1124,6 +1120,12 @@ main (int argc, char *argv[])
 
 	pollfd[2].fd = ipc_fd;
 	pollfd[2].events = POLLIN;
+
+	// Enable receiving now, we're ready to process the incoming events
+	if (udev_monitor_enable_receiving(monitor)) {
+		syslog(LOG_ERR, "Cannot enable receiving");
+		goto cleanup;
+	}
 
 	syslog(LOG_INFO, "Entering the main loop");
 
