@@ -525,7 +525,7 @@ device_mount (Device *dev)
 
 	// Take a deep breath and don't panic!
 	// The buffer is big enough to accomodate the content.
-	strcat(opt_fmt, "uhelper=ldm,");
+	strcat(opt_fmt, "uhelper=ldm");
 
 	ctx = mnt_new_context();
 
