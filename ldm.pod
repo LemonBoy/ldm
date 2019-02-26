@@ -72,7 +72,7 @@ ldm doesn't offer any blacklisting by itself but it honors the options found in 
 
 =head1 INSTALL
 
-The included systemd service expects a config file at /etc/ldm.conf similar to this: 
+The included systemd service expects a config file at /etc/ldm.conf similar to this:
 
 =begin man
 
@@ -83,6 +83,7 @@ The included systemd service expects a config file at /etc/ldm.conf similar to t
 MOUNT_OWNER=\fIusername\fR
 BASE_MOUNTPOINT=\fI/mnt\fR
 FMASK_DMASK=\fIfmask,dmask\fR
+EXTRA_ARGS=\fl-c <path_to_executable>\fR
 .EB lightgray
 .fi
 .RE
@@ -96,10 +97,15 @@ FMASK_DMASK=\fIfmask,dmask\fR
 MOUNT_OWNER=<i>username</i>
 BASE_MOUNTPOINT=<i>/mnt</i>
 FMASK_DMASK=<i>fmask,dmask</i>
+EXTRA_ARGS=<i>-c &lt;path_to_executable&gt;</i>
 </code>
 </pre>
 
 =end html
+
+The options B<FMASK_DMASK> and B<EXTRA_ARGS> are optional.
+The default value for B<FMASK_DMASK> is I<0133,0022>.
+B<EXTRA_ARGS> will be appended to the I<ldm> executable.
 
 =head1 SEE ALSO
 

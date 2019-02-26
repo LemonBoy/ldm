@@ -4,7 +4,7 @@ Description=lightweight device mounter
 [Service]
 Environment=FMASK_DMASK=0133,0022
 EnvironmentFile=/etc/ldm.conf
-ExecStart=@@BINDIR@@/ldm -u ${MOUNT_OWNER} -p ${BASE_MOUNTPOINT} -m ${FMASK_DMASK} -c ${COMMAND_PATH}
+ExecStart=@@BINDIR@@/ldm -u ${MOUNT_OWNER} -p ${BASE_MOUNTPOINT} -m ${FMASK_DMASK} ${EXTRA_ARGS}
 KillMode=process
 
 [Install]
