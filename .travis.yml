@@ -1,0 +1,7 @@
+language: c
+os: linux
+before_install:
+    - sudo apt update
+    - sudo apt install -y libglib2.0-dev libudev-dev
+script:
+    - make all
