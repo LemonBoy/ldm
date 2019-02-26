@@ -1008,14 +1008,21 @@ main (int argc, char *argv[])
 				}
 				break;
 			case 'p':
-				g_mount_path = strdup(optarg);
-				break;
 			case 'c':
-				g_callback_cmd = strdup(optarg);
+				if (optarg[0] == '\0') {
+					fprintf(stderr, "Cannot pass empty argument to -%c\n", opt);
+					return EXIT_FAILURE;
+				}
+				if (opt == 'p') {
+					g_mount_path = strdup(optarg);
+				}
+				else {
+					g_callback_cmd = strdup(optarg);
+				}
 				break;
 			case 'h':
 				printf("ldm "VERSION_STR"\n");
-				printf("2011-2017 (C) The Lemon Man\n");
+				printf("2011-2019 (C) The Lemon Man\n");
 				printf("%s [-d | -r | -u | -p | -c | -m | -h]\n", argv[0]);
 				printf("\t-d Run ldm as a daemon\n");
 				printf("\t-u Specify the user\n");
