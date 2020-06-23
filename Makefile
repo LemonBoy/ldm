@@ -41,6 +41,9 @@ doc: ldm.pod ldmc.pod
 	@pod2man --section=1 --center="ldm Manual" --name "ldm" --release="$(VERSION)" ldm.pod > ldm.1
 	@pod2man --section=1 --center="ldmc Manual" --name "ldmc" --release="$(VERSION)" ldmc.pod > ldmc.1
 
+readme: ldm.pod
+	@pod2markdown -u ldm.pod README.md
+
 clean:
 	$(RM) *.o *.1 ldm ldmc ldm.service
 
@@ -67,4 +70,4 @@ uninstall:
 	$(RM) $(DESTDIR)/usr/share/man/man1/ldmc.1
 	$(RM) $(DESTDIR)$(SYSTEMDDIR)/system/ldm.service
 
-.PHONY: all debug clean mrproper install install-main install-systemd uninstall service
+.PHONY: all debug clean mrproper install install-main install-systemd uninstall service readme
