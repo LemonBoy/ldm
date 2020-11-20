@@ -1,8 +1,0 @@
-language: c
-os: linux
-dist: xenial
-before_install:
-    - sudo apt update
-    - sudo apt install -y libglib2.0-dev libudev-dev libmount-dev libblkid-dev
-script:
-    - make all
